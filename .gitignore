@@ -30,3 +30,77 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+## React Native + Expo
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Expo / React Native
+.expo/
+.expo-shared/
+*.expo
+web-build/
+dist/
+*.keystore
+
+# Android
+android/.gradle/
+android/app/build/
+android/build/
+android/app/*.keystore
+android/app/*.jks
+*.iml
+.idea/
+.gradle/
+local.properties
+
+# iOS
+ios/Pods/
+ios/build/
+ios/DerivedData/
+*.xcodeproj/project.xcworkspace
+*.xcworkspace
+*.xcuserdata/
+*.lock
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+
+# Environment files
+.env
+.env.*.local
+.env.local
+
+# Editor files
+.vscode/
+*.sublime-project
+*.sublime-workspace
+*.sw?
+*.idea/
+*.vscode/
+*.code-workspace
+
+# Logs
+logs/
+*.log
+
+# Misc
+.expo/
+.expo-shared/assets.json
