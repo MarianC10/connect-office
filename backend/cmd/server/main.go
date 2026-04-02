@@ -1,15 +1,14 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
+
+	"github.com/MarianC10/connect-office/backend/locations"
 )
 
 func main() {
-	http.HandleFunc("/", func(httpWriter http.ResponseWriter, httpRequest *http.Request) {
-		fmt.Fprintln(httpWriter, "Hello, World!")
-	})
+	http.HandleFunc("/locations", locations.GetLocationsHandler)
 	log.Println("Server is running on port 8080")
 	http.ListenAndServe(":8080", nil)
 }
