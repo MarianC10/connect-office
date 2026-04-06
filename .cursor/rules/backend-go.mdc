@@ -13,9 +13,14 @@ This rule defines layout and layering for `github.com/MarianC10/connect-office/b
 ```text
 backend/
 ├── go.mod
+├── docker-compose.yml       # local PostgreSQL (db + init SQL mount)
+├── db/init/                 # schema applied on first container init (docker-entrypoint-initdb.d)
+├── .env.example             # DATABASE_URL template
 ├── cmd/
-│   └── server/
-│       └── main.go          # config, wiring, register routes, ListenAndServe — no business logic
+│   ├── server/
+│   │   └── main.go          # config, wiring, register routes, ListenAndServe — no business logic
+│   └── seed/
+│       └── main.go          # dev data loader (requires DATABASE_URL; truncates seed tables)
 └── internal/                # not importable by other modules
     └── <slice>/             # vertical slice (e.g. locations); package name = slice name
         ├── service.go       # required: use cases, validation, DTO mapping, store calls (no HTTP)
@@ -35,12 +40,18 @@ backend/
 | **service** | Use cases for the slice: orchestration, rules/validation, mapping to/from DTOs, `context`, calling **store**. Construct `*Service` in `main`, inject into handlers. |
 | **handler** | Thin HTTP adapter; call service methods; set headers/status. |
 | **models** | API DTOs (`json` tags). Internal working types can live unexported in **service** (or **store**) until a separate domain layer is warranted. |
-| **store** | I/O: DB, external HTTP clients. Behind small interfaces when testing or swapping backends. |
+| **store** | I/O: DB (GORM + Postgres driver), external HTTP clients. Behind small interfaces when testing or swapping backends. |
 
 ## `cmd/server`
 
 - Parse configuration, build `*Service` (and stores when they exist), register handlers, start the server.
 - Import paths: `github.com/MarianC10/connect-office/backend/internal/<slice>`.
+
+## Database (PostgreSQL)
+
+- Local DB: from `backend/`, `docker compose up -d` (see `docker-compose.yml` and `db/init/`).
+- Server and `cmd/seed` expect **`DATABASE_URL`** (see `.env.example`). Schema changes belong in `db/init/` (new numbered `.sql` files) or a future migration tool if you outgrow init scripts.
+- **Seed** (`go run ./cmd/seed` from `backend/`) reloads reference data; the current locations seed **truncates** `location_amenities`, `amenities`, and `locations` — use only for local/dev.
 
 ## Naming
 
