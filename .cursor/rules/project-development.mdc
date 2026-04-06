@@ -1,0 +1,28 @@
+---
+description: Trunk-based development, PRs, squash merge, feature flags, coding comments
+alwaysApply: true
+---
+
+# Project development rules
+
+## Trunk-based development
+
+- **`main` is the trunk** and should stay releasable.
+- **Work happens on short-lived branches** created from `main`.
+- **Pushing directly to `main` is prohibited**. Use pull requests.
+
+## Merging
+
+- **Use squash merge** when merging PRs into `main`.
+- **Squash commit messages must be meaningful**, describing what the feature/change does (not just "WIP" or a ticket number).
+
+## Feature flags
+
+- **Experimental or incomplete features must be guarded by feature flags** so they can merge safely without impacting users.
+- Prefer flags that default to **off**, with clear enable/disable instructions documented in the PR.
+
+## Coding (comments)
+
+- **Do not** add comments that restate what the code already says (narrating control flow, naming variables in prose, or describing obvious mechanics).
+- **Prefer no comment** when the code is clear on its own.
+- When a comment helps, use it for **why** something is structured or chosen a particular way (non-obvious tradeoffs, invariants, coupling with another system, or constraints that are not visible from the code alone)—and **only when that context is needed** for future readers.

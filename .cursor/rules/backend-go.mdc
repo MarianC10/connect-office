@@ -1,0 +1,62 @@
+---
+description: Go backend — vertical slices, service layer, cmd vs internal
+globs: backend/**/*.go
+alwaysApply: false
+---
+
+# Backend Go — source of truth
+
+This rule defines layout and layering for `github.com/MarianC10/connect-office/backend`.
+
+## Layout
+
+```text
+backend/
+├── go.mod
+├── cmd/
+│   └── server/
+│       └── main.go          # config, wiring, register routes, ListenAndServe — no business logic
+└── internal/                # not importable by other modules
+    └── <slice>/             # vertical slice (e.g. locations); package name = slice name
+        ├── service.go       # required: use cases, validation, DTO mapping, store calls (no HTTP)
+        ├── handler.go       # HTTP only: decode/bind, call service, write status + JSON
+        ├── models.go        # request/response DTOs (JSON tags, validation tags)
+        └── store.go         # optional: persistence / external APIs (add when needed)
+```
+
+## Dependency direction
+
+- **handler** → **service**; **service** → **store** (when present). Handlers do not call **store** directly.
+
+## Responsibilities
+
+| Layer | Role |
+|--------|------|
+| **service** | Use cases for the slice: orchestration, rules/validation, mapping to/from DTOs, `context`, calling **store**. Construct `*Service` in `main`, inject into handlers. |
+| **handler** | Thin HTTP adapter; call service methods; set headers/status. |
+| **models** | API DTOs (`json` tags). Internal working types can live unexported in **service** (or **store**) until a separate domain layer is warranted. |
+| **store** | I/O: DB, external HTTP clients. Behind small interfaces when testing or swapping backends. |
+
+## `cmd/server`
+
+- Parse configuration, build `*Service` (and stores when they exist), register handlers, start the server.
+- Import paths: `github.com/MarianC10/connect-office/backend/internal/<slice>`.
+
+## Naming
+
+- Do **not** use `package http` for application code (clashes with `net/http`). Use the slice name (`locations`, …) or names like `httpserver` only for a dedicated router wrapper.
+
+## Cross-slice code
+
+- Shared infrastructure: `internal/platform/` or `internal/pkg/` (logging, DB pool, middleware). Keep generic.
+- Avoid a large shared `models` package until several slices need the same DTOs.
+
+## Testing
+
+- Table-test **service** logic with fake stores where I/O is involved.
+- **Handlers**: `httptest` for status codes and JSON bodies.
+
+## New slice checklist
+
+1. Add `internal/<slice>/` with `service.go`, `handler.go`, `models.go`, and `store.go` when persistence appears.
+2. Wire routes in `cmd/server/main.go` (or `internal/httpserver` if registration outgrows `main`).
