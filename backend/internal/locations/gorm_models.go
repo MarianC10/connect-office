@@ -29,11 +29,17 @@ type Location struct {
 	Country     string    `gorm:"column:country;type:text;not null"`
 	Latitude    float64   `gorm:"column:latitude;type:double precision;not null"`
 	Longitude   float64   `gorm:"column:longitude;type:double precision;not null"`
+	Images      []LocationImage `gorm:"column:images;type:jsonb;serializer:json;not null;default:'[]'"`
 	CreatedAt   time.Time `gorm:"column:created_at;type:timestamptz;not null;autoCreateTime"`
 	UpdatedAt   time.Time `gorm:"column:updated_at;type:timestamptz;not null;autoUpdateTime"`
 
 	// Junction table location_amenities: location_id → locations.id, amenity_id → amenities.id
 	Amenities []Amenity `gorm:"many2many:location_amenities;joinForeignKey:LocationID;joinReferences:AmenityID"`
+}
+
+type LocationImage struct {
+	ID  string `json:"id"`
+	URL string `json:"url"`
 }
 
 func (Location) TableName() string {

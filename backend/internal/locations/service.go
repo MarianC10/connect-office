@@ -3,6 +3,7 @@ package locations
 import (
 	"context"
 	"fmt"
+	"net/url"
 )
 
 type Service struct {
@@ -38,6 +39,18 @@ func validateLocationResponse(loc LocationResponse) error {
 	}
 	if loc.Longitude < -180 || loc.Longitude > 180 {
 		return fmt.Errorf("longitude out of range: %v", loc.Longitude)
+	}
+	for _, img := range loc.Images {
+		if img.ID == "" {
+			return fmt.Errorf("image id is required")
+		}
+		if img.URL == "" {
+			return fmt.Errorf("image url is required")
+		}
+		parsed, err := url.Parse(img.URL)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			return fmt.Errorf("invalid image url: %q", img.URL)
+		}
 	}
 	return nil
 }

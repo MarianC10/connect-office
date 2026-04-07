@@ -5,6 +5,11 @@ type AmenityResponse struct {
 	Category string `json:"category"`
 }
 
+type LocationImageResponse struct {
+	ID  string `json:"id"`
+	URL string `json:"url"`
+}
+
 type LocationResponse struct {
 	ID          string            `json:"id"`
 	Name        string            `json:"name"`
@@ -15,5 +20,6 @@ type LocationResponse struct {
 	Country     string            `json:"country"`
 	Latitude    float64           `json:"latitude"`
 	Longitude   float64           `json:"longitude"`
+	Images      []LocationImageResponse `json:"images"`
 	Amenities   []AmenityResponse `json:"amenities"`
 }
