@@ -2,13 +2,18 @@ package locations
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
+
+	"gorm.io/gorm"
 )
 
 type Service struct {
 	store Store
 }
+
+var ErrLocationNotFound = errors.New("location not found")
 
 func NewService(store Store) *Service {
 	return &Service{store: store}
@@ -25,6 +30,20 @@ func (s *Service) ListLocations(ctx context.Context) ([]LocationResponse, error)
 		}
 	}
 	return items, nil
+}
+
+func (s *Service) GetLocationByID(ctx context.Context, id string) (LocationResponse, error) {
+	loc, err := s.store.GetLocationByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return LocationResponse{}, ErrLocationNotFound
+		}
+		return LocationResponse{}, err
+	}
+	if err := validateLocationResponse(loc); err != nil {
+		return LocationResponse{}, fmt.Errorf("location %q: %w", loc.ID, err)
+	}
+	return loc, nil
 }
 
 func validateLocationResponse(loc LocationResponse) error {

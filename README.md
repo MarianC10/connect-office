@@ -46,11 +46,21 @@ Use **feature flags** for changes that are incomplete, risky, or experimental so
 - Docker Compose serves static files with `nginx` on `http://localhost:8082`.
 - Put image files under `backend/static/locations/...` so URLs from DB resolve correctly.
 
-## Backend migrations (code-defined)
+## Run Backend Application
 
-- Migrations are defined in Go under `backend/internal/migrations`.
-- Apply migrations manually:
-  - `cd backend`
-  - `go run ./cmd/migrate`
-- The API server also runs migrations on startup by default.
-  - Disable with `RUN_MIGRATIONS_ON_STARTUP=false`.
+1. Start dependencies:
+   - From CLI: `cd backend && docker compose up -d`
+   - Or start the same services from Docker Desktop.
+2. Seed the database:
+   - `cd backend`
+   - `go run ./cmd/seed`
+3. Start the backend server:
+   - `cd backend`
+   - `go run ./cmd/server`
+
+### Closing / cleanup
+
+- Stop and remove backend dependencies:
+  - From CLI: `cd backend && docker compose down -v`
+  - Or stop/remove the same containers from Docker Desktop.
+- Stop the backend server by closing the terminal window (or pressing `Ctrl+C` in that terminal).

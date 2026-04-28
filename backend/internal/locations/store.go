@@ -9,6 +9,7 @@ import (
 
 type Store interface {
 	ListLocations(ctx context.Context) ([]LocationResponse, error)
+	GetLocationByID(ctx context.Context, id string) (LocationResponse, error)
 }
 
 type PostgresStore struct {
@@ -36,6 +37,19 @@ func (p *PostgresStore) ListLocations(ctx context.Context) ([]LocationResponse, 
 		out = append(out, locationToResponse(loc))
 	}
 	return out, nil
+}
+
+func (p *PostgresStore) GetLocationByID(ctx context.Context, id string) (LocationResponse, error) {
+	var loc Location
+	err := p.db.WithContext(ctx).
+		Preload("Amenities", func(db *gorm.DB) *gorm.DB {
+			return db.Order("name ASC")
+		}).
+		First(&loc, "id = ?", id).Error
+	if err != nil {
+		return LocationResponse{}, fmt.Errorf("get location by id %q: %w", id, err)
+	}
+	return locationToResponse(loc), nil
 }
 
 func locationToResponse(loc Location) LocationResponse {
