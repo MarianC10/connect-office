@@ -56,6 +56,7 @@ func main() {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	http.HandleFunc("/locations", locations.NewGetLocationsHandler(locSvc))
+	http.HandleFunc("/locations/", locations.NewGetLocationByIDHandler(locSvc))
 
 	go func() {
 		log.Println("Server is running on port 8080")
