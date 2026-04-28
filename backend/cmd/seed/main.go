@@ -75,7 +75,7 @@ var locationsSeed = []seedLocation{
 		ID:          locBuch,
 		Name:        "Connect Office — Bucharest North",
 		Description: "North Bucharest location with quick access to Pipera business district.",
-		Address:     "Șoseaua București-Ploiești nr. 172-176, sector 1",
+		Address:     "Soseaua Bucuresti-Ploiesti nr. 172-176, sector 1",
 		City:        "Bucharest",
 		County:      "Bucharest",
 		Country:     "Romania",
@@ -88,11 +88,11 @@ var locationsSeed = []seedLocation{
 	},
 	{
 		ID:          locTimis,
-		Name:        "Connect Office — Timișoara",
-		Description: "Central Timișoara workspace on the main boulevard.",
-		Address:     "Bulevardul Revoluției din 1989 nr. 5",
-		City:        "Timișoara",
-		County:      "Timiș",
+		Name:        "Connect Office — Timisoara",
+		Description: "Central Timisoara workspace on the main boulevard.",
+		Address:     "Bulevardul Revolutiei din 1989 nr. 5",
+		City:        "Timisoara",
+		County:      "Timis",
 		Country:     "Romania",
 		Latitude:    45.7489,
 		Longitude:   21.2087,
@@ -182,7 +182,7 @@ func main() {
 			log.Fatalf("marshal images for %s: %v", loc.Name, err)
 		}
 
-		_, err := tx.Exec(ctx, `
+		_, err = tx.Exec(ctx, `
 INSERT INTO locations (id, name, description, address, city, county, country, latitude, longitude, images)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)`,
 			loc.ID, loc.Name, loc.Description, loc.Address, loc.City, loc.County, loc.Country, loc.Latitude, loc.Longitude, imagesJSON)
