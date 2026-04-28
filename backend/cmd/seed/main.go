@@ -67,8 +67,8 @@ var locationsSeed = []seedLocation{
 		Latitude:    46.7709,
 		Longitude:   23.5969,
 		Images: []seedLocationImage{
-			{ID: "cluj-lobby", URL: "http://localhost:8081/locations/cluj/lobby.jpg"},
-			{ID: "cluj-open-space", URL: "http://localhost:8081/locations/cluj/open-space.jpg"},
+			{ID: "cluj-lobby", URL: "http://localhost:8082/locations/cluj/lobby.jpg"},
+			{ID: "cluj-open-space", URL: "http://localhost:8082/locations/cluj/open-space.jpg"},
 		},
 	},
 	{
@@ -82,8 +82,8 @@ var locationsSeed = []seedLocation{
 		Latitude:    44.5112,
 		Longitude:   26.0840,
 		Images: []seedLocationImage{
-			{ID: "bucharest-exterior", URL: "http://localhost:8081/locations/bucharest/exterior.jpg"},
-			{ID: "bucharest-meeting-room", URL: "http://localhost:8081/locations/bucharest/meeting-room.jpg"},
+			{ID: "bucharest-exterior", URL: "http://localhost:8082/locations/bucharest/exterior.jpg"},
+			{ID: "bucharest-meeting-room", URL: "http://localhost:8082/locations/bucharest/meeting-room.jpg"},
 		},
 	},
 	{
@@ -97,8 +97,8 @@ var locationsSeed = []seedLocation{
 		Latitude:    45.7489,
 		Longitude:   21.2087,
 		Images: []seedLocationImage{
-			{ID: "timisoara-common-area", URL: "http://localhost:8081/locations/timisoara/common-area.jpg"},
-			{ID: "timisoara-focus-zone", URL: "http://localhost:8081/locations/timisoara/focus-zone.jpg"},
+			{ID: "timisoara-common-area", URL: "http://localhost:8082/locations/timisoara/common-area.jpg"},
+			{ID: "timisoara-focus-zone", URL: "http://localhost:8082/locations/timisoara/focus-zone.jpg"},
 		},
 	},
 }
