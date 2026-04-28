@@ -39,3 +39,18 @@ Use **feature flags** for changes that are incomplete, risky, or experimental so
 - **Short-lived branches**
 - **Squash merges with meaningful messages**
 - **Feature flags for experimental/incomplete features**
+
+## Backend static images
+
+- Location images are stored in `locations.images` as a JSONB list of objects: `[{ "id": "...", "url": "..." }]`.
+- Docker Compose serves static files with `nginx` on `http://localhost:8081`.
+- Put image files under `backend/static/locations/...` so URLs from DB resolve correctly.
+
+## Backend migrations (code-defined)
+
+- Migrations are defined in Go under `backend/internal/migrations`.
+- Apply migrations manually:
+  - `cd backend`
+  - `go run ./cmd/migrate`
+- The API server also runs migrations on startup by default.
+  - Disable with `RUN_MIGRATIONS_ON_STARTUP=false`.

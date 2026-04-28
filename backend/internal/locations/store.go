@@ -39,6 +39,14 @@ func (p *PostgresStore) ListLocations(ctx context.Context) ([]LocationResponse, 
 }
 
 func locationToResponse(loc Location) LocationResponse {
+	images := make([]LocationImageResponse, 0, len(loc.Images))
+	for _, img := range loc.Images {
+		images = append(images, LocationImageResponse{
+			ID:  img.ID,
+			URL: img.URL,
+		})
+	}
+
 	amenities := make([]AmenityResponse, 0, len(loc.Amenities))
 	for _, a := range loc.Amenities {
 		amenities = append(amenities, AmenityResponse{
@@ -56,6 +64,7 @@ func locationToResponse(loc Location) LocationResponse {
 		Country:     loc.Country,
 		Latitude:    loc.Latitude,
 		Longitude:   loc.Longitude,
+		Images:      images,
 		Amenities:   amenities,
 	}
 }

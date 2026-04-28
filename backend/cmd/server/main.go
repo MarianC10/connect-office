@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/MarianC10/connect-office/backend/internal/locations"
+	"github.com/MarianC10/connect-office/backend/internal/migrations"
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -38,6 +39,12 @@ func main() {
 
 	if err := sqlDB.PingContext(ctx); err != nil {
 		log.Fatalf("db ping: %v", err)
+	}
+
+	if os.Getenv("RUN_MIGRATIONS_ON_STARTUP") != "false" {
+		if err := migrations.Run(ctx, db); err != nil {
+			log.Fatalf("run migrations: %v", err)
+		}
 	}
 
 	store := locations.NewPostgresStore(db)
