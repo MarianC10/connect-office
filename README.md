@@ -43,7 +43,7 @@ Use **feature flags** for changes that are incomplete, risky, or experimental so
 ## Backend static images
 
 - Location images are stored in `locations.images` as a JSONB list of objects: `[{ "id": "...", "url": "..." }]`.
-- Docker Compose serves static files with `nginx` on `http://localhost:8081`.
+- Docker Compose serves static files with `nginx` on `http://localhost:8082`.
 - Put image files under `backend/static/locations/...` so URLs from DB resolve correctly.
 
 ## Backend migrations (code-defined)

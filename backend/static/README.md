@@ -2,7 +2,7 @@ Static image assets served by `nginx` in `docker-compose.yml`.
 
 Expected URL base:
 
-- `http://localhost:8081/locations/...`
+- `http://localhost:8082/locations/...`
 
 Seed data expects these files:
 
