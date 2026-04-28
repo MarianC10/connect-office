@@ -11,6 +11,17 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro
 
+  migrate:
+    image: golang:1.24-alpine
+    working_dir: /app
+    command: sh -c "go run ./cmd/migrate"
+    environment:
+      DATABASE_URL: postgres://connectoffice:connectoffice@postgres:5432/connect_office?sslmode=disable
+    volumes:
+      - .:/app
+    depends_on:
+      - postgres
+
   static-files:
     image: nginx:1.27-alpine
     ports:
