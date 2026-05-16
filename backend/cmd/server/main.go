@@ -99,8 +99,8 @@ func main() {
 		Handler:           nil,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	http.HandleFunc("/locations", locations.NewGetLocationsHandler(locSvc))
-	http.HandleFunc("/locations/", locations.NewGetLocationByIDHandler(locSvc))
+	http.Handle("/locations", auth.Middleware(verifier, http.HandlerFunc(locations.NewGetLocationsHandler(locSvc))))
+	http.Handle("/locations/", auth.Middleware(verifier, http.HandlerFunc(locations.NewGetLocationByIDHandler(locSvc))))
 	http.Handle("/me", auth.Middleware(verifier, http.HandlerFunc(users.NewMeHandler(userSvc))))
 
 	go func() {

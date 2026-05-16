@@ -57,7 +57,7 @@ Display name or username columns can be added later if needed.
 |----------|------|
 | `backend/internal/platform/auth` | `SUPABASE_JWT_SECRET` (optional if RS256-only with issuer URL), optional `SUPABASE_URL` / `SUPABASE_JWT_ISSUER` for `iss` and JWKS (`<issuer>/.well-known/jwks.json`). Bearer parsing, JWT verify HS256/RS256, `Principal` on `context`, `Middleware`. |
 | `backend/internal/users` | GORM `User` model, store upsert from principal, `GET /me` handler. |
-| `backend/cmd/server/main.go` | Wire verifier, user service, protected `/me`. Public routes (e.g. `GET /locations`) unchanged. |
+| `backend/cmd/server/main.go` | Wire verifier; protect `/me` and location routes with the same JWT middleware. |
 
 Dependency: `github.com/golang-jwt/jwt/v5`.
 
@@ -81,6 +81,7 @@ Use HTTPS for bearer tokens in production.
 
 - `@supabase/supabase-js` + `expo-sqlite/localStorage/install` and `localStorage` for session persistence (Expo-recommended; avoids `@react-native-async-storage/async-storage` native bridge issues on some targets).
 - After sign-in, `GET /me` with `Authorization: Bearer <access_token>` provisions the user row in your DB.
+- Authenticated API calls (including `GET /locations`) send the same Bearer access token.
 - Login/signup screens call Supabase Auth; successful login syncs via `lib/api.ts`.
 
 ## Testing

@@ -23,6 +23,7 @@ import { BlurView } from "expo-blur";
 import { router } from "expo-router";
 import { useScrollToTop } from "@react-navigation/native";
 
+import { getAccessToken } from "@/lib/api";
 import { API_BASE_URL } from "@/lib/env";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -110,14 +111,26 @@ function useLocations() {
   const [error, setError]         = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`${API_BASE_URL}/locations`)
-      .then((r) => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getAccessToken();
+        const r = await fetch(`${API_BASE_URL}/locations`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (cancelled) return;
         if (!r.ok) throw new Error(`Server error: HTTP ${r.status}`);
-        return r.json() as Promise<Location[]>;
-      })
-      .then(setLocations)
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false));
+        const data = (await r.json()) as Location[];
+        setLocations(data);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   return { locations, loading, error };
