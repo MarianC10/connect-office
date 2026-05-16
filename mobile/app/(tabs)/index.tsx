@@ -23,6 +23,8 @@ import { BlurView } from "expo-blur";
 import { router } from "expo-router";
 import { useScrollToTop } from "@react-navigation/native";
 
+import { API_BASE_URL } from "@/lib/env";
+
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const CARD_WIDTH = SCREEN_WIDTH * 0.44;
 const CARD_GAP = 12;
@@ -30,12 +32,6 @@ const CARD_GAP = 12;
 // ─── Background image ─────────────────────────────────────────────────────────
 
 const BG_IMAGE = require("../../assets/images/login_signup_background.jpg");
-
-// ─── API base URL ─────────────────────────────────────────────────────────────
-// On a physical device/emulator replace with your machine's LAN IP,
-// e.g. "http://192.168.1.42:8080"
-
-const API_BASE_URL = "http://192.168.100.4:8080";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

@@ -6,11 +6,14 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
 	"github.com/MarianC10/connect-office/backend/internal/locations"
 	"github.com/MarianC10/connect-office/backend/internal/migrations"
+	"github.com/MarianC10/connect-office/backend/internal/platform/auth"
+	"github.com/MarianC10/connect-office/backend/internal/users"
 	"github.com/joho/godotenv"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -50,6 +53,31 @@ func main() {
 	store := locations.NewPostgresStore(db)
 	locSvc := locations.NewService(store)
 
+	jwtSecret := strings.TrimSpace(os.Getenv("SUPABASE_JWT_SECRET"))
+	if jwtSecret == "" {
+		log.Fatal("SUPABASE_JWT_SECRET is required")
+	}
+	var vopts []auth.VerifierOption
+	if iss := strings.TrimSpace(os.Getenv("SUPABASE_JWT_ISSUER")); iss != "" {
+		vopts = append(vopts, auth.WithIssuer(iss))
+	} else if base := strings.TrimSpace(os.Getenv("SUPABASE_URL")); base != "" {
+		iss, err := auth.IssuerFromSupabaseURL(base)
+		if err != nil {
+			log.Fatalf("SUPABASE_URL: %v", err)
+		}
+		vopts = append(vopts, auth.WithIssuer(iss))
+	}
+	if aud := strings.TrimSpace(os.Getenv("SUPABASE_JWT_AUDIENCE")); aud != "" {
+		vopts = append(vopts, auth.WithAudience(aud))
+	}
+	verifier, err := auth.NewVerifier(jwtSecret, vopts...)
+	if err != nil {
+		log.Fatalf("auth verifier: %v", err)
+	}
+
+	userStore := users.NewPostgresStore(db)
+	userSvc := users.NewService(userStore)
+
 	srv := &http.Server{
 		Addr:              ":8080",
 		Handler:           nil,
@@ -57,6 +85,7 @@ func main() {
 	}
 	http.HandleFunc("/locations", locations.NewGetLocationsHandler(locSvc))
 	http.HandleFunc("/locations/", locations.NewGetLocationByIDHandler(locSvc))
+	http.Handle("/me", auth.Middleware(verifier, http.HandlerFunc(users.NewMeHandler(userSvc))))
 
 	go func() {
 		log.Println("Server is running on port 8080")

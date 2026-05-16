@@ -82,6 +82,21 @@ var All = []Migration{
 			`).Error
 		},
 	},
+	{
+		ID:          "0003_users",
+		Description: "Create users table for Supabase-backed identities",
+		Up: func(ctx context.Context, tx *gorm.DB) error {
+			return tx.WithContext(ctx).Exec(`
+				CREATE TABLE IF NOT EXISTS users (
+					id UUID PRIMARY KEY,
+					email TEXT,
+					email_verified BOOLEAN NOT NULL DEFAULT false,
+					created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+					updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+				)
+			`).Error
+		},
+	},
 }
 
 func Run(ctx context.Context, db *gorm.DB) error {
