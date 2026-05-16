@@ -41,7 +41,7 @@ export default function LoginScreen() {
     }
     setBusy(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data: { session }, error } = await supabase.auth.signInWithPassword({
         email: trimmed,
         password,
       });
@@ -49,11 +49,15 @@ export default function LoginScreen() {
         Alert.alert('Sign in failed', error.message);
         return;
       }
-      await syncCurrentUserWithBackend();
+      if (!session?.access_token) {
+        Alert.alert('Sign in failed', 'No session returned.');
+        return;
+      }
+      await syncCurrentUserWithBackend(session.access_token);
       router.replace('/(tabs)');
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      Alert.alert('Could not reach API', msg);
+      Alert.alert('Could not sync with API', msg);
     } finally {
       setBusy(false);
     }

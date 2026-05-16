@@ -27,7 +27,7 @@ sequenceDiagram
 ```
 
 - **Supabase**: identity, sessions, refresh tokens, OAuth/email flows.
-- **Your API**: validates **access token** JWT only; treats **`sub`** as the canonical user id.
+- **Your API**: validates **access token** JWT only (HS256 with JWT secret and/or RS256 via Supabase Auth JWKS); treats **`sub`** as the canonical user id.
 - **Your DB**: one row per user; **created/updated on first (and subsequent) authenticated calls** via upsert—no sync jobs.
 
 ## Supabase project (dashboard)
@@ -35,7 +35,7 @@ sequenceDiagram
 - Enable desired providers under **Authentication → Providers** (email/OAuth).
 - Record **JWT secret** (Settings → API) for server verification (HS256).
 - Record **issuer** `iss` (typically `https://<project-ref>.supabase.co/auth/v1`) and confirm **`aud`** on a real token (often `authenticated`).
-- Mobile uses **anon key** + Project URL (public); **JWT secret stays server-only**.
+- Mobile uses **publishable key** + Project URL (public); **JWT secret stays server-only**.
 - **Data API / exposing tables in Supabase Postgres is not required** for this architecture—the Go API owns app data in your own Postgres.
 
 ## Database: `users` table
@@ -55,7 +55,7 @@ Display name or username columns can be added later if needed.
 
 | Location | Role |
 |----------|------|
-| `backend/internal/platform/auth` | `SUPABASE_JWT_SECRET`, optional `SUPABASE_URL` / `SUPABASE_JWT_ISSUER` for `iss`. Bearer parsing, JWT verify (`exp`, `iss`, `aud`, signature), `Principal` on `context`, `Middleware`. |
+| `backend/internal/platform/auth` | `SUPABASE_JWT_SECRET` (optional if RS256-only with issuer URL), optional `SUPABASE_URL` / `SUPABASE_JWT_ISSUER` for `iss` and JWKS (`<issuer>/.well-known/jwks.json`). Bearer parsing, JWT verify HS256/RS256, `Principal` on `context`, `Middleware`. |
 | `backend/internal/users` | GORM `User` model, store upsert from principal, `GET /me` handler. |
 | `backend/cmd/server/main.go` | Wire verifier, user service, protected `/me`. Public routes (e.g. `GET /locations`) unchanged. |
 
@@ -72,14 +72,14 @@ Dependency: `github.com/golang-jwt/jwt/v5`.
 **Mobile** (`mobile/.env.example`):
 
 - `EXPO_PUBLIC_SUPABASE_URL`
-- `EXPO_PUBLIC_SUPABASE_ANON_KEY`
+- `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`
 - `EXPO_PUBLIC_API_BASE_URL`
 
 Use HTTPS for bearer tokens in production.
 
 ## Mobile client
 
-- `@supabase/supabase-js` + `@react-native-async-storage/async-storage` for session persistence.
+- `@supabase/supabase-js` + `expo-sqlite/localStorage/install` and `localStorage` for session persistence (Expo-recommended; avoids `@react-native-async-storage/async-storage` native bridge issues on some targets).
 - After sign-in, `GET /me` with `Authorization: Bearer <access_token>` provisions the user row in your DB.
 - Login/signup screens call Supabase Auth; successful login syncs via `lib/api.ts`.
 

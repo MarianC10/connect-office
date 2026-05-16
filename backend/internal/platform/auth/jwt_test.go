@@ -49,6 +49,16 @@ func TestVerifier_Verify_roundTrip(t *testing.T) {
 	}
 }
 
+func TestIssuersMatch_trailingSlash(t *testing.T) {
+	base := "https://abc123.supabase.co/auth/v1"
+	if !issuersMatch(base, base+"/") {
+		t.Fatal("expected match")
+	}
+	if issuersMatch(base, "https://other.supabase.co/auth/v1") {
+		t.Fatal("expected mismatch")
+	}
+}
+
 func TestVerifier_Verify_wrongSecret(t *testing.T) {
 	secret := "test-secret-at-least-32-bytes-long!!"
 	iss, _ := IssuerFromSupabaseURL("https://abc123.supabase.co")

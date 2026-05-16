@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MicahParks/keyfunc/v3"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
@@ -24,6 +25,7 @@ type Principal struct {
 
 type Verifier struct {
 	secret   []byte
+	jwks     keyfunc.Keyfunc
 	issuer   string
 	audience string
 }
@@ -42,17 +44,23 @@ func WithAudience(aud string) VerifierOption {
 	}
 }
 
+func WithJWKS(k keyfunc.Keyfunc) VerifierOption {
+	return func(v *Verifier) {
+		v.jwks = k
+	}
+}
+
 func NewVerifier(jwtSecret string, opts ...VerifierOption) (*Verifier, error) {
 	secret := strings.TrimSpace(jwtSecret)
-	if secret == "" {
-		return nil, errors.New("jwt secret is required")
-	}
 	v := &Verifier{
 		secret:   []byte(secret),
 		audience: "authenticated",
 	}
 	for _, o := range opts {
 		o(v)
+	}
+	if len(v.secret) == 0 && v.jwks == nil {
+		return nil, errors.New("set SUPABASE_JWT_SECRET and/or SUPABASE_* URL so JWKS can be configured")
 	}
 	return v, nil
 }
@@ -72,19 +80,56 @@ type supabaseClaims struct {
 	jwt.RegisteredClaims
 }
 
+func JWKSURLFromIssuer(issuer string) (string, error) {
+	iss := strings.TrimSpace(issuer)
+	if iss == "" {
+		return "", errors.New("issuer is empty")
+	}
+	return strings.TrimRight(iss, "/") + "/.well-known/jwks.json", nil
+}
+
+func issuersMatch(expected, fromToken string) bool {
+	a := strings.TrimRight(strings.TrimSpace(expected), "/")
+	b := strings.TrimRight(strings.TrimSpace(fromToken), "/")
+	return a != "" && a == b
+}
+
 func (v *Verifier) Verify(raw string) (Principal, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return Principal{}, ErrMissingToken
 	}
 
-	var claims supabaseClaims
-	token, err := jwt.ParseWithClaims(raw, &claims, func(token *jwt.Token) (any, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method %q", token.Header["alg"])
+	headerToken, _, err := jwt.NewParser().ParseUnverified(raw, jwt.MapClaims{})
+	if err != nil {
+		return Principal{}, ErrInvalidToken
+	}
+	if headerToken.Method == nil {
+		return Principal{}, ErrInvalidToken
+	}
+
+	alg := headerToken.Method.Alg()
+	var keyFunc jwt.Keyfunc
+	switch alg {
+	case jwt.SigningMethodHS256.Alg():
+		if len(v.secret) == 0 {
+			return Principal{}, ErrInvalidToken
 		}
-		return v.secret, nil
-	})
+		keyFunc = func(token *jwt.Token) (any, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method %q", token.Header["alg"])
+			}
+			return v.secret, nil
+		}
+	default:
+		if v.jwks == nil {
+			return Principal{}, ErrInvalidToken
+		}
+		keyFunc = v.jwks.Keyfunc
+	}
+
+	var claims supabaseClaims
+	token, err := jwt.ParseWithClaims(raw, &claims, keyFunc)
 	if err != nil || !token.Valid {
 		return Principal{}, ErrInvalidToken
 	}
@@ -113,7 +158,7 @@ func (v *Verifier) Verify(raw string) (Principal, error) {
 
 	if v.issuer != "" {
 		iss, err := claims.GetIssuer()
-		if err != nil || iss != v.issuer {
+		if err != nil || !issuersMatch(v.issuer, iss) {
 			return Principal{}, ErrInvalidToken
 		}
 	}

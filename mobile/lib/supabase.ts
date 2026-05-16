@@ -1,13 +1,19 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import "expo-sqlite/localStorage/install";
+import type { LockFunc } from "@supabase/auth-js";
 import { createClient } from "@supabase/supabase-js";
 
-import { SUPABASE_ANON_KEY, SUPABASE_URL } from "@/lib/env";
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from "@/lib/env";
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+const authLock: LockFunc = async (_name, _acquireTimeout, fn) => await fn();
+
+export const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
-    storage: AsyncStorage,
+    storage: localStorage,
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
+    flowType: "pkce",
+    lock: authLock,
+    ...(typeof __DEV__ !== "undefined" && __DEV__ ? { debug: true } : {}),
   },
 });
