@@ -68,17 +68,15 @@ func main() {
 	}
 	if iss != "" {
 		vopts = append(vopts, auth.WithIssuer(iss))
-		if jwtSecret == "" {
-			jwksURL, err := auth.JWKSURLFromIssuer(iss)
-			if err != nil {
-				log.Fatalf("jwks url: %v", err)
-			}
-			k, err := keyfunc.NewDefaultCtx(ctx, []string{jwksURL})
-			if err != nil {
-				log.Fatalf("jwks: %v", err)
-			}
-			vopts = append(vopts, auth.WithJWKS(k))
+		jwksURL, err := auth.JWKSURLFromIssuer(iss)
+		if err != nil {
+			log.Fatalf("jwks url: %v", err)
 		}
+		k, err := keyfunc.NewDefaultCtx(ctx, []string{jwksURL})
+		if err != nil {
+			log.Fatalf("jwks: %v", err)
+		}
+		vopts = append(vopts, auth.WithJWKS(k))
 	}
 	if aud := strings.TrimSpace(os.Getenv("SUPABASE_JWT_AUDIENCE")); aud != "" {
 		vopts = append(vopts, auth.WithAudience(aud))
