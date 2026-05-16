@@ -60,7 +60,7 @@ func NewVerifier(jwtSecret string, opts ...VerifierOption) (*Verifier, error) {
 		o(v)
 	}
 	if len(v.secret) == 0 && v.jwks == nil {
-		return nil, errors.New("set SUPABASE_JWT_SECRET and/or SUPABASE_* URL so JWKS can be configured")
+		return nil, errors.New("jwt verifier needs a secret (HS256) or JWKS (RS256/ES256); leave SUPABASE_JWT_SECRET empty only when the issuer URL is set so JWKS loads")
 	}
 	return v, nil
 }
@@ -121,11 +121,13 @@ func (v *Verifier) Verify(raw string) (Principal, error) {
 			}
 			return v.secret, nil
 		}
-	default:
+	case jwt.SigningMethodRS256.Alg(), jwt.SigningMethodES256.Alg():
 		if v.jwks == nil {
 			return Principal{}, ErrInvalidToken
 		}
 		keyFunc = v.jwks.Keyfunc
+	default:
+		return Principal{}, ErrInvalidToken
 	}
 
 	var claims supabaseClaims

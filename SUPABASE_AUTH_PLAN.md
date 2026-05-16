@@ -65,8 +65,8 @@ Dependency: `github.com/golang-jwt/jwt/v5`.
 
 **Backend** (`backend/.env.example`):
 
-- `SUPABASE_JWT_SECRET` (required)
-- `SUPABASE_JWT_ISSUER` or `SUPABASE_URL` (for `iss` validation)
+- `SUPABASE_JWT_SECRET` (required for HS256; omit when using RS256 with issuer URL so JWKS is used)
+- `SUPABASE_JWT_ISSUER` or `SUPABASE_URL` (for `iss` validation; RS256 also needs this for JWKS at `<issuer>/.well-known/jwks.json`)
 - Optional `SUPABASE_JWT_AUDIENCE` (default check: `authenticated`)
 
 **Mobile** (`mobile/.env.example`):

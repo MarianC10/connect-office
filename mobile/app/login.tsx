@@ -7,7 +7,6 @@ import {
   ImageBackground,
   Image,
   TouchableOpacity,
-  Switch,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -23,7 +22,6 @@ import { isValidEmail } from '@/utils/validation';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -119,17 +117,6 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.rememberRow}>
-              <Text style={styles.rememberText}>Remember me</Text>
-              <Switch
-                value={rememberMe}
-                onValueChange={setRememberMe}
-                disabled={busy}
-                trackColor={{ false: '#767577', true: '#2C3E50' }}
-                thumbColor="#fff"
-              />
-            </View>
-
             <TouchableOpacity
               style={[styles.signInButton, busy && styles.signInButtonDisabled]}
               onPress={() => void handleLogin()}
@@ -217,20 +204,6 @@ const styles = StyleSheet.create({
     flex: 1,
     color: '#000',
     fontSize: 16,
-  },
-
-  rememberRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    width: '100%',
-    alignItems: 'center',
-    marginBottom: 25,
-    paddingHorizontal: 10,
-  },
-
-  rememberText: {
-    color: '#fff',
-    fontSize: 14,
   },
 
   signInButton: {

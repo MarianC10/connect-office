@@ -1,14 +1,30 @@
 package auth
 
 import (
+	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"encoding/base64"
+	"fmt"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
+	"github.com/MicahParks/keyfunc/v3"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
+
+func jwksJSONRSA(pub *rsa.PublicKey, kid string) string {
+	n := base64.RawURLEncoding.EncodeToString(pub.N.Bytes())
+	e := base64.RawURLEncoding.EncodeToString(big.NewInt(int64(pub.E)).Bytes())
+	return fmt.Sprintf(
+		`{"keys":[{"kty":"RSA","kid":%q,"use":"sig","alg":"RS256","n":%q,"e":%q}]}`,
+		kid, n, e,
+	)
+}
 
 func TestVerifier_Verify_roundTrip(t *testing.T) {
 	secret := "test-secret-at-least-32-bytes-long!!"
@@ -56,6 +72,84 @@ func TestIssuersMatch_trailingSlash(t *testing.T) {
 	}
 	if issuersMatch(base, "https://other.supabase.co/auth/v1") {
 		t.Fatal("expected mismatch")
+	}
+}
+
+func TestVerifier_Verify_RS256_JWKS(t *testing.T) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const kid = "k1"
+	jwksBody := jwksJSONRSA(&priv.PublicKey, kid)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/auth/v1/.well-known/jwks.json", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(jwksBody))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	issuer := srv.URL + "/auth/v1"
+	jwksURL := issuer + "/.well-known/jwks.json"
+
+	k, err := keyfunc.NewDefaultCtx(context.Background(), []string{jwksURL})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	v, err := NewVerifier("", WithIssuer(issuer), WithJWKS(k))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	uid := uuid.MustParse("33333333-3333-3333-3333-333333333333")
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, supabaseClaims{
+		Email:         "rs@example.com",
+		EmailVerified: true,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   uid.String(),
+			Issuer:    issuer,
+			Audience:  jwt.ClaimStrings{"authenticated"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		},
+	})
+	token.Header["kid"] = kid
+	raw, err := token.SignedString(priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p, err := v.Verify(raw)
+	if err != nil {
+		t.Fatalf("verify: %v", err)
+	}
+	if p.UserID != uid || p.Email != "rs@example.com" || !p.EmailVerified {
+		t.Fatalf("principal: %+v", p)
+	}
+}
+
+func TestVerifier_rejectsUnsupportedAlg(t *testing.T) {
+	secret := "test-secret-at-least-32-bytes-long!!"
+	iss, _ := IssuerFromSupabaseURL("https://abc123.supabase.co")
+	v, _ := NewVerifier(secret, WithIssuer(iss))
+
+	uid := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	token := jwt.NewWithClaims(jwt.SigningMethodHS512, supabaseClaims{
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject:   uid.String(),
+			Issuer:    iss,
+			Audience:  jwt.ClaimStrings{"authenticated"},
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+		},
+	})
+	raw, err := token.SignedString([]byte(secret))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := v.Verify(raw); err == nil {
+		t.Fatal("expected error for unsupported alg")
 	}
 }
 
