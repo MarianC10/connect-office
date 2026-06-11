@@ -425,7 +425,7 @@ function LocationCard({ item, index }: LocationCardProps) {
     <TouchableOpacity
       activeOpacity={0.82}
       style={styles.card}
-      onPress={() => router.push({ pathname: "/office/[id]", params: { id: item.id } })}
+      onPress={() => router.push({ pathname: "/office/[id]", params: { id: item.id },} as any )}
     >
       <BlurView intensity={50} tint="light" style={StyleSheet.absoluteFill} />
       <View style={[StyleSheet.absoluteFill, { backgroundColor: tint }]} />
@@ -493,7 +493,12 @@ function SearchResultCard({ item }: SearchResultCardProps) {
     <TouchableOpacity
       activeOpacity={0.82}
       style={styles.resultCard}
-      onPress={() => router.push({ pathname: "/office/[id]", params: { id: item.id } })}
+      onPress={() =>
+        router.push({
+          pathname: "/office/[id]",
+          params: { id: item.id },
+        } as any)
+      }
     >
       <BlurView intensity={55} tint="light" style={StyleSheet.absoluteFill} />
       <View style={styles.resultCardBg} />
