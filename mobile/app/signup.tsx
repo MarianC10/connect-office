@@ -11,11 +11,13 @@ import {
   Platform,
   ScrollView,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { isValidEmail } from '../utils/validation';
-import { isValidPassword } from '../utils/validation';
+
+import { supabase } from '@/lib/supabase';
+import { isValidEmail, isValidPassword } from '../utils/validation';
 
 export default function SignUpScreen() {
   const router = useRouter();
@@ -28,7 +30,9 @@ export default function SignUpScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const handleSignUp = () => {
+  const [busy, setBusy] = useState(false);
+
+  const handleSignUp = async () => {
     if (!email || !username || !password || !confirmPassword) {
       Alert.alert('Missing fields', 'Please complete all fields.');
       return;
@@ -49,9 +53,25 @@ export default function SignUpScreen() {
       return;
     }
 
-    // later replace this with backend stuff validation
-    Alert.alert('Success', 'Account created successfully!');
-    router.push('/login');
+    setBusy(true);
+    try {
+      const { error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: { data: { preferred_username: username.trim() } },
+      });
+      if (error) {
+        Alert.alert('Sign up failed', error.message);
+        return;
+      }
+      Alert.alert(
+        'Success',
+        'If email confirmation is enabled in Supabase, check your inbox before signing in.',
+      );
+      router.push('/login');
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -170,10 +190,15 @@ export default function SignUpScreen() {
 
               {/* sign up button */}
               <TouchableOpacity
-                style={styles.signUpButton}
-                onPress={handleSignUp}
+                style={[styles.signUpButton, busy && styles.signUpButtonDisabled]}
+                onPress={() => void handleSignUp()}
+                disabled={busy}
               >
-                <Text style={styles.signUpText}>SIGN UP</Text>
+                {busy ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.signUpText}>SIGN UP</Text>
+                )}
               </TouchableOpacity>
 
               {/* footer */}
@@ -264,7 +289,12 @@ const styles = StyleSheet.create({
     width: '90%',
     borderRadius: 25,
     alignItems: 'center',
+    justifyContent: 'center',
     marginBottom: 15,
+    minHeight: 48,
+  },
+  signUpButtonDisabled: {
+    opacity: 0.7,
   },
 
   signUpText:{
