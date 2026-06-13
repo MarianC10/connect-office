@@ -11,6 +11,7 @@ import {
   Platform,
   StatusBar,
   ImageBackground,
+  Image,
   Modal,
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -41,6 +42,11 @@ interface Amenity {
   category: string;
 }
 
+interface LocationImage{
+  id: string;
+  url: string;
+}
+
 interface Location {
   id: string;
   name: string;
@@ -51,6 +57,7 @@ interface Location {
   country: string;
   latitude: number;
   longitude: number;
+  images: LocationImage[]
   amenities: Amenity[];
 }
 
@@ -102,6 +109,26 @@ const DEFAULT_REGION: Region = {
   latitudeDelta: 0.14,
   longitudeDelta: 0.14,
 };
+
+
+function getStaticFilesBaseUrl() {
+  return API_BASE_URL.replace(/\/$/, "").replace(/:\d+$/, ":8082");
+}
+
+function normalizeLocationImageUrl(url?: string | null) {
+  if (!url) return null;
+
+  const staticFilesBaseUrl = getStaticFilesBaseUrl();
+
+  return url
+    .replace(/^http:\/\/localhost:8082/i, staticFilesBaseUrl)
+    .replace(/^http:\/\/127\.0\.0\.1:8082/i, staticFilesBaseUrl)
+    .replace(/^http:\/\/10\.0\.2\.2:8082/i, staticFilesBaseUrl);
+}
+
+function getLocationMainImage(location: Location) {
+  return normalizeLocationImageUrl(location.images?.[0]?.url);
+}
 
 // ─── Fetch hook ───────────────────────────────────────────────────────────────
 
@@ -440,9 +467,17 @@ function LocationCard({ item, index }: LocationCardProps) {
       <View style={[StyleSheet.absoluteFill, { backgroundColor: tint }]} />
 
       <View style={styles.cardImg}>
-        <View style={styles.cardImgIconWrap}>
-          <Text style={styles.cardImgEmoji}>🏢</Text>
-        </View>
+        {getLocationMainImage(item) ? (
+          <Image
+            source={{ uri: getLocationMainImage(item)! }}
+            style={styles.cardPhoto}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.cardImgIconWrap}>
+            <Text style={styles.cardImgEmoji}>🏢</Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.cardBody}>
@@ -514,7 +549,15 @@ function SearchResultCard({ item }: SearchResultCardProps) {
 
       {/* Left: office image placeholder */}
       <View style={styles.resultCardImg}>
-        <Text style={{ fontSize: 32 }}>🏢</Text>
+        {getLocationMainImage(item) ? (
+          <Image
+            source={{ uri: getLocationMainImage(item)! }}
+            style={styles.resultCardPhoto}
+            resizeMode="cover"
+          />
+        ) : (
+          <Text style={{ fontSize: 32 }}>🏢</Text>
+        )}
       </View>
 
       {/* Right: info */}
@@ -1071,6 +1114,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: "rgba(180, 200, 255, 0.10)",
   },
+
+  cardPhoto: {
+    width: "100%",
+    height: "100%",
+  },
+
   cardImgIconWrap: {
     width: 46,
     height: 46,
@@ -1144,6 +1193,12 @@ const styles = StyleSheet.create({
     borderRightWidth: StyleSheet.hairlineWidth,
     borderRightColor: C.glassBorder,
   },
+  
+  resultCardPhoto: {
+    width: "100%",
+    height: "100%",
+  },
+
   resultCardBody: {
     flex: 1,
     padding: 12,

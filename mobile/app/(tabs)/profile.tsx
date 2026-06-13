@@ -1,128 +1,12 @@
-// import React from 'react';
-// import {
-//   View,
-//   Text,
-//   StyleSheet,
-//   // SafeAreaView,
-//   TouchableOpacity,
-//   ImageBackground,
-// } from 'react-native';
-// import {
-//   Feather,
-//   Ionicons,
-//   MaterialCommunityIcons,
-//   AntDesign,
-// } from '@expo/vector-icons';
-// import { SafeAreaView } from 'react-native-safe-area-context';
-
-// export default function ProfileScreen() {
-//   const user = {
-//     name: 'User name',
-//     email: 'user_email',
-//   };
-
-//   const MenuItem = ({
-//     icon,
-//     label,
-//     onPress,
-//   }: {
-//     icon: React.ReactNode;
-//     label: string;
-//     onPress?: () => void;
-//   }) => (
-//     <TouchableOpacity style={styles.menuItem} onPress={onPress}>
-//       <View style={styles.menuIcon}>{icon}</View>
-//       <Text style={styles.menuText}>{label}</Text>
-//     </TouchableOpacity>
-//   );
-
-//   return (
-//     <ImageBackground
-//       source={{
-//         uri: 'https://images.unsplash.com/photo-1497366754035-f200968a6e72',
-//       }}
-//       style={styles.background}
-//       resizeMode="cover"
-//     >
-//       {/* Dark overlay */}
-//       <View style={styles.overlay}>
-//         <SafeAreaView style={styles.container}>
-
-//           {/* Profile Card */}
-//           <View style={styles.profileCard}>
-//             <View style={styles.avatar}>
-//               <Feather name="user" size={42} color="#333" />
-//             </View>
-
-//             <View style={styles.userInfo}>
-//               <Text style={styles.userName}>{user.name}</Text>
-//               <Text style={styles.userEmail}>{user.email}</Text>
-//             </View>
-//           </View>
-
-//           {/* Section 1 */}
-//           <View style={styles.section}>
-//             <MenuItem
-//               icon={<Feather name="edit-2" size={22} color="#333" />}
-//               label="Edit Profile"
-//             />
-//             <View style={styles.separator} />
-//             <MenuItem
-//               icon={<Feather name="lock" size={22} color="#333" />}
-//               label="Change Password"
-//             />
-//           </View>
-
-//           {/* Section 2 */}
-//           <View style={styles.section}>
-//             <MenuItem
-//               icon={<Ionicons name="notifications-outline" size={22} color="#333" />}
-//               label="Notifications"
-//             />
-//             <View style={styles.separator} />
-
-//             <MenuItem
-//               icon={<Feather name="calendar" size={22} color="#333" />}
-//               label="All bookings"
-//             />
-//             <View style={styles.separator} />
-
-//             <MenuItem
-//               icon={
-//                 <MaterialCommunityIcons
-//                   name="tune-variant"
-//                   size={22}
-//                   color="#333"
-//                 />
-//               }
-//               label="Preferences"
-//             />
-//             <View style={styles.separator} />
-
-//             <MenuItem
-//               icon={<Feather name="credit-card" size={22} color="#333" />}
-//               label="Subscription"
-//             />
-//             <View style={styles.separator} />
-
-//             <MenuItem
-//               icon={<AntDesign name="poweroff" size={20} color="#333" />}
-//               label="LogOut"
-//             />
-//           </View>
-//         </SafeAreaView>
-//       </View>
-//     </ImageBackground>
-//   );
-// }
-
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ImageBackground,
+  ActivityIndicator,
+  Image,
 } from 'react-native';
 import {
   Feather,
@@ -132,13 +16,73 @@ import {
 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
+import { supabase } from '@/lib/supabase';
+
+type ProfileUser = {
+  name: string;
+  email: string;
+};
 
 export default function ProfileScreen() {
   const router = useRouter();
 
-  const user = {
-    name: 'User name',
-    email: 'user_email',
+  const [user, setUser] = useState<ProfileUser>({
+    name: 'User',
+    email: '',
+  });
+
+  const [loading, setLoading] = useState(true);
+
+  const getUsernameFromMetadata = (metadata: any) => {
+    return (
+      metadata?.preferred_username ||
+      metadata?.user_name ||
+      metadata?.username ||
+      'User'
+    );
+  };
+
+  useEffect(() => {
+    const loadUserProfile = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      const currentUser = session?.user;
+
+      if (currentUser) {
+        setUser({
+          name: getUsernameFromMetadata(currentUser.user_metadata),
+          email: currentUser.email ?? '',
+        });
+      }
+
+      setLoading(false);
+    };
+
+    void loadUserProfile();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      const currentUser = session?.user;
+
+      if (currentUser) {
+        setUser({
+          name: getUsernameFromMetadata(currentUser.user_metadata),
+          email: currentUser.email ?? '',
+        });
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.replace('/login');
   };
 
   const MenuItem = ({
@@ -170,19 +114,24 @@ export default function ProfileScreen() {
     >
       <View style={styles.overlay}>
         <SafeAreaView style={styles.container}>
-          {/* Profile Card (also pressable if you want) */}
+          {/* Profile Card */}
           <TouchableOpacity
             style={styles.profileCard}
             activeOpacity={0.85}
-            // onPress={() => router.push('/profile/edit')}
           >
             <View style={styles.avatar}>
               <Feather name="user" size={42} color="#333" />
             </View>
 
             <View style={styles.userInfo}>
-              <Text style={styles.userName}>{user.name}</Text>
-              <Text style={styles.userEmail}>{user.email}</Text>
+              {loading ? (
+                <ActivityIndicator color="#333" />
+              ) : (
+                <>
+                  <Text style={styles.userName}>{user.name}</Text>
+                  <Text style={styles.userEmail}>{user.email}</Text>
+                </>
+              )}
             </View>
           </TouchableOpacity>
 
@@ -191,7 +140,7 @@ export default function ProfileScreen() {
             <MenuItem
               icon={<Feather name="edit-2" size={22} color="#333" />}
               label="Edit Profile"
-              // onPress={() => router.push('/profile/edit')}
+              onPress={() => router.push('/profile/edit')}
             />
             <View style={styles.separator} />
 
@@ -213,14 +162,14 @@ export default function ProfileScreen() {
                 />
               }
               label="Notifications"
-              // onPress={() => router.push('/profile/notifications')}
+              onPress={() => router.push('/profile/notifications')}
             />
             <View style={styles.separator} />
 
             <MenuItem
               icon={<Feather name="calendar" size={22} color="#333" />}
               label="All bookings"
-              // onPress={() => router.push('/profile/bookings')}
+              onPress={() => router.push('/profile/bookings')}
             />
             <View style={styles.separator} />
 
@@ -247,7 +196,7 @@ export default function ProfileScreen() {
             <MenuItem
               icon={<AntDesign name="poweroff" size={20} color="#333" />}
               label="LogOut"
-              onPress={() => router.replace('/login')}
+              onPress={handleLogout}
             />
           </View>
         </SafeAreaView>
@@ -277,7 +226,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(217, 217, 217, 0.9)',
-    // backgroundColor: '#d9d9d9',
     borderRadius: 22,
     padding: 18,
     marginBottom: 16,
@@ -314,7 +262,6 @@ const styles = StyleSheet.create({
   },
 
   section: {
-    // backgroundColor: '#d9d9d9',
     backgroundColor: 'rgba(217, 217, 217, 0.9)',
     borderRadius: 18,
     marginBottom: 16,
