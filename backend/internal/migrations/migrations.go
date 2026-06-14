@@ -97,6 +97,44 @@ var All = []Migration{
 			`).Error
 		},
 	},
+	{
+		ID:          "0004_location_capacity",
+		Description: "Add desk capacity to locations",
+		Up: func(ctx context.Context, tx *gorm.DB) error {
+			return tx.WithContext(ctx).Exec(`
+				ALTER TABLE locations
+				ADD COLUMN IF NOT EXISTS capacity INTEGER NOT NULL DEFAULT 40
+					CHECK (capacity > 0)
+			`).Error
+		},
+	},
+	{
+		ID:          "0005_bookings",
+		Description: "Create bookings table",
+		Up: func(ctx context.Context, tx *gorm.DB) error {
+			statements := []string{
+				`CREATE TABLE IF NOT EXISTS bookings (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+					location_id UUID NOT NULL REFERENCES locations (id) ON DELETE CASCADE,
+					booking_date DATE NOT NULL,
+					status TEXT NOT NULL DEFAULT 'confirmed'
+						CHECK (status IN ('confirmed', 'cancelled')),
+					created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+					updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+					UNIQUE (user_id, booking_date)
+				)`,
+				`CREATE INDEX IF NOT EXISTS bookings_user_id_idx ON bookings (user_id)`,
+				`CREATE INDEX IF NOT EXISTS bookings_location_date_idx ON bookings (location_id, booking_date)`,
+			}
+			for _, stmt := range statements {
+				if err := tx.WithContext(ctx).Exec(stmt).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
 }
 
 func Run(ctx context.Context, db *gorm.DB) error {

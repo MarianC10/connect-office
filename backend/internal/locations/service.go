@@ -59,6 +59,9 @@ func validateLocationResponse(loc LocationResponse) error {
 	if loc.Longitude < -180 || loc.Longitude > 180 {
 		return fmt.Errorf("longitude out of range: %v", loc.Longitude)
 	}
+	if loc.Capacity <= 0 {
+		return fmt.Errorf("capacity must be positive: %d", loc.Capacity)
+	}
 	for _, img := range loc.Images {
 		if img.ID == "" {
 			return fmt.Errorf("image id is required")

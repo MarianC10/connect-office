@@ -41,6 +41,7 @@ type seedLocation struct {
 	Country     string
 	Latitude    float64
 	Longitude   float64
+	Capacity    int
 	Images      []seedLocationImage
 }
 
@@ -66,6 +67,7 @@ var locationsSeed = []seedLocation{
 		Country:     "Romania",
 		Latitude:    46.7709,
 		Longitude:   23.5969,
+		Capacity:    40,
 		Images: []seedLocationImage{
 			{ID: "cluj-lobby", URL: "http://localhost:8082/locations/cluj/lobby.jpg"},
 			{ID: "cluj-open-space", URL: "http://localhost:8082/locations/cluj/open-space.jpg"},
@@ -81,6 +83,7 @@ var locationsSeed = []seedLocation{
 		Country:     "Romania",
 		Latitude:    44.5112,
 		Longitude:   26.0840,
+		Capacity:    60,
 		Images: []seedLocationImage{
 			{ID: "bucharest-exterior", URL: "http://localhost:8082/locations/bucharest/exterior.jpg"},
 			{ID: "bucharest-meeting-room", URL: "http://localhost:8082/locations/bucharest/meeting-room.jpg"},
@@ -96,6 +99,7 @@ var locationsSeed = []seedLocation{
 		Country:     "Romania",
 		Latitude:    45.7489,
 		Longitude:   21.2087,
+		Capacity:    30,
 		Images: []seedLocationImage{
 			{ID: "timisoara-common-area", URL: "http://localhost:8082/locations/timisoara/common-area.jpg"},
 			{ID: "timisoara-focus-zone", URL: "http://localhost:8082/locations/timisoara/focus-zone.jpg"},
@@ -183,9 +187,9 @@ func main() {
 		}
 
 		_, err = tx.Exec(ctx, `
-INSERT INTO locations (id, name, description, address, city, county, country, latitude, longitude, images)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)`,
-			loc.ID, loc.Name, loc.Description, loc.Address, loc.City, loc.County, loc.Country, loc.Latitude, loc.Longitude, imagesJSON)
+INSERT INTO locations (id, name, description, address, city, county, country, latitude, longitude, capacity, images)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)`,
+			loc.ID, loc.Name, loc.Description, loc.Address, loc.City, loc.County, loc.Country, loc.Latitude, loc.Longitude, loc.Capacity, imagesJSON)
 		if err != nil {
 			log.Fatalf("insert location %s: %v", loc.Name, err)
 		}
