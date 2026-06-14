@@ -11,6 +11,17 @@ export async function getAccessToken(accessTokenOverride?: string): Promise<stri
   return token;
 }
 
+export async function authFetch(path: string, init?: RequestInit): Promise<Response> {
+  const token = await getAccessToken();
+  return fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(init?.headers ?? {}),
+    },
+  });
+}
+
 /** Provisions the user row in the Go API (GET /me with Supabase access token). */
 export async function syncCurrentUserWithBackend(
   accessTokenOverride?: string
