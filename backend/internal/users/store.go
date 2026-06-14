@@ -8,11 +8,14 @@ import (
 	"time"
 
 	"github.com/MarianC10/connect-office/backend/internal/platform/auth"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
 type Store interface {
 	UpsertFromPrincipal(ctx context.Context, p auth.Principal) (User, error)
+	GetStripeCustomerID(ctx context.Context, userID uuid.UUID) (string, error)
+	SetStripeCustomerID(ctx context.Context, userID uuid.UUID, customerID string) error
 }
 
 type PostgresStore struct {
@@ -68,4 +71,41 @@ func (s *PostgresStore) UpsertFromPrincipal(ctx context.Context, p auth.Principa
 		return User{}, fmt.Errorf("reload user: %w", err)
 	}
 	return out, nil
+}
+
+func (s *PostgresStore) GetStripeCustomerID(ctx context.Context, userID uuid.UUID) (string, error) {
+	var u User
+	err := s.db.WithContext(ctx).
+		Select("stripe_customer_id").
+		First(&u, "id = ?", userID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("load stripe customer id: %w", err)
+	}
+	if u.StripeCustomerID == nil {
+		return "", nil
+	}
+	return *u.StripeCustomerID, nil
+}
+
+func (s *PostgresStore) SetStripeCustomerID(ctx context.Context, userID uuid.UUID, customerID string) error {
+	customerID = strings.TrimSpace(customerID)
+	if customerID == "" {
+		return fmt.Errorf("stripe customer id is required")
+	}
+	res := s.db.WithContext(ctx).
+		Model(&User{ID: userID}).
+		Updates(map[string]any{
+			"stripe_customer_id": customerID,
+			"updated_at":         time.Now().UTC(),
+		})
+	if res.Error != nil {
+		return fmt.Errorf("set stripe customer id: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }

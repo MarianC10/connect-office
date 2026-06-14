@@ -97,6 +97,120 @@ var All = []Migration{
 			`).Error
 		},
 	},
+	{
+		ID:          "0004_location_capacity",
+		Description: "Add desk capacity to locations",
+		Up: func(ctx context.Context, tx *gorm.DB) error {
+			return tx.WithContext(ctx).Exec(`
+				ALTER TABLE locations
+				ADD COLUMN IF NOT EXISTS capacity INTEGER NOT NULL DEFAULT 40
+					CHECK (capacity > 0)
+			`).Error
+		},
+	},
+	{
+		ID:          "0005_bookings",
+		Description: "Create bookings table",
+		Up: func(ctx context.Context, tx *gorm.DB) error {
+			statements := []string{
+				`CREATE TABLE IF NOT EXISTS bookings (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+					location_id UUID NOT NULL REFERENCES locations (id) ON DELETE CASCADE,
+					booking_date DATE NOT NULL,
+					status TEXT NOT NULL DEFAULT 'confirmed'
+						CHECK (status IN ('confirmed', 'cancelled')),
+					created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+					updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+					UNIQUE (user_id, booking_date)
+				)`,
+				`CREATE INDEX IF NOT EXISTS bookings_user_id_idx ON bookings (user_id)`,
+				`CREATE INDEX IF NOT EXISTS bookings_location_date_idx ON bookings (location_id, booking_date)`,
+			}
+			for _, stmt := range statements {
+				if err := tx.WithContext(ctx).Exec(stmt).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		ID:          "0006_subscriptions",
+		Description: "Add user subscriptions and Stripe customer id on users",
+		Up: func(ctx context.Context, tx *gorm.DB) error {
+			statements := []string{
+				`ALTER TABLE users
+				ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`,
+				`CREATE TABLE IF NOT EXISTS user_subscriptions (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+					plan_type TEXT NOT NULL
+						CHECK (plan_type IN ('entrances_10', 'monthly', 'yearly')),
+					status TEXT NOT NULL DEFAULT 'active'
+						CHECK (status IN ('active', 'expired', 'cancelled')),
+					entrances_remaining INTEGER,
+					starts_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+					expires_at TIMESTAMPTZ,
+					stripe_checkout_session_id TEXT,
+					stripe_subscription_id TEXT,
+					stripe_payment_intent_id TEXT,
+					created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+					updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+				)`,
+				`CREATE INDEX IF NOT EXISTS user_subscriptions_user_id_idx ON user_subscriptions (user_id)`,
+				`CREATE UNIQUE INDEX IF NOT EXISTS user_subscriptions_one_active_per_user_idx
+					ON user_subscriptions (user_id) WHERE status = 'active'`,
+			}
+			for _, stmt := range statements {
+				if err := tx.WithContext(ctx).Exec(stmt).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		ID:          "0007_subscription_plans",
+		Description: "Create subscription_plans catalog table",
+		Up: func(ctx context.Context, tx *gorm.DB) error {
+			statements := []string{
+				`CREATE TABLE IF NOT EXISTS subscription_plans (
+					plan_type TEXT PRIMARY KEY
+						CHECK (plan_type IN ('entrances_10', 'monthly', 'yearly')),
+					name TEXT NOT NULL,
+					perks JSONB NOT NULL DEFAULT '[]'::jsonb,
+					stripe_price_id TEXT NOT NULL DEFAULT '',
+					active BOOLEAN NOT NULL DEFAULT true,
+					sort_order INTEGER NOT NULL DEFAULT 0,
+					created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+					updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+				)`,
+				`INSERT INTO subscription_plans (plan_type, name, perks, sort_order) VALUES
+					('entrances_10', '10 Entrances', '["10 office visits", "Use anytime"]', 1),
+					('monthly', 'Monthly', '["Unlimited entrances", "Renews monthly"]', 2),
+					('yearly', 'Yearly', '["Unlimited entrances", "Best value"]', 3)
+				ON CONFLICT (plan_type) DO NOTHING`,
+			}
+			for _, stmt := range statements {
+				if err := tx.WithContext(ctx).Exec(stmt).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		ID:          "0008_subscription_checkout_session_unique",
+		Description: "Unique index on stripe checkout session id for idempotent webhook activation",
+		Up: func(ctx context.Context, tx *gorm.DB) error {
+			return tx.WithContext(ctx).Exec(`
+				CREATE UNIQUE INDEX IF NOT EXISTS user_subscriptions_checkout_session_id_idx
+					ON user_subscriptions (stripe_checkout_session_id)
+					WHERE stripe_checkout_session_id IS NOT NULL
+			`).Error
+		},
+	},
 }
 
 func Run(ctx context.Context, db *gorm.DB) error {

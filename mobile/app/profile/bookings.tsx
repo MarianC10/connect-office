@@ -29,6 +29,41 @@ export default function AllBookingsScreen() {
    */
   const [bookings] = useState<BookingItem[]>([]);
 
+  /**
+   * TESTING DATA WHEN BOOKINGS EXIST
+   *
+   * To test the design, comment the empty state above and uncomment this:
+   *
+   * const [bookings] = useState<BookingItem[]>([
+   *   {
+   *     id: '1',
+   *     officeName: 'Office1',
+   *     description: 'short description',
+   *     rentedDate: '12 June 2026',
+   *     rating: 4.5,
+   *     imageUrl: 'https://images.unsplash.com/photo-1497366811353-6870744d04b2',
+   *     isFavorite: false,
+   *   },
+   *   {
+   *     id: '2',
+   *     officeName: 'Office1',
+   *     description: 'short description',
+   *     rentedDate: '15 June 2026',
+   *     rating: 4.5,
+   *     imageUrl: 'https://images.unsplash.com/photo-1497366754035-f200968a6e72',
+   *     isFavorite: false,
+   *   },
+   *   {
+   *     id: '3',
+   *     officeName: 'Office1',
+   *     description: 'short description',
+   *     rentedDate: '21 June 2026',
+   *     rating: 4.5,
+   *     imageUrl: 'https://images.unsplash.com/photo-1497366216548-37526070297c',
+   *     isFavorite: false,
+   *   },
+   * ]);
+   */
 
   const sortedBookings = useMemo(() => {
     return [...bookings];

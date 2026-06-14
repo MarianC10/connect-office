@@ -10,9 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/MarianC10/connect-office/backend/internal/bookings"
 	"github.com/MarianC10/connect-office/backend/internal/locations"
 	"github.com/MarianC10/connect-office/backend/internal/migrations"
 	"github.com/MarianC10/connect-office/backend/internal/platform/auth"
+	"github.com/MarianC10/connect-office/backend/internal/subscriptions"
 	"github.com/MarianC10/connect-office/backend/internal/users"
 	"github.com/MicahParks/keyfunc/v3"
 	"github.com/joho/godotenv"
@@ -92,14 +94,35 @@ func main() {
 	userStore := users.NewPostgresStore(db)
 	userSvc := users.NewService(userStore)
 
+	bookingStore := bookings.NewPostgresStore(db)
+	bookingSvc := bookings.NewService(bookingStore, locSvc, userStore)
+
+	subCfg := subscriptions.LoadConfigFromEnv()
+	subStore := subscriptions.NewPostgresStore(db)
+	subStripe := subscriptions.NewStripeClient(subCfg)
+	subSvc := subscriptions.NewService(subStore, userStore, subStripe, subCfg)
+
 	srv := &http.Server{
 		Addr:              ":8080",
 		Handler:           nil,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	http.Handle("/locations", auth.Middleware(verifier, http.HandlerFunc(locations.NewGetLocationsHandler(locSvc))))
-	http.Handle("/locations/", auth.Middleware(verifier, http.HandlerFunc(locations.NewGetLocationByIDHandler(locSvc))))
+	http.Handle("/locations/", auth.Middleware(verifier, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/availability") {
+			bookings.NewLocationAvailabilityHandler(bookingSvc)(w, r)
+			return
+		}
+		locations.NewGetLocationByIDHandler(locSvc)(w, r)
+	})))
+	http.Handle("/bookings", auth.Middleware(verifier, http.HandlerFunc(bookings.NewBookingsHandler(bookingSvc))))
+	http.Handle("/bookings/", auth.Middleware(verifier, http.HandlerFunc(bookings.NewBookingByIDHandler(bookingSvc))))
 	http.Handle("/me", auth.Middleware(verifier, http.HandlerFunc(users.NewMeHandler(userSvc))))
+	http.Handle("/subscriptions/plans", auth.Middleware(verifier, http.HandlerFunc(subscriptions.NewPlansHandler(subSvc))))
+	http.Handle("/subscriptions/me", auth.Middleware(verifier, http.HandlerFunc(subscriptions.NewMeHandler(subSvc))))
+	http.Handle("/subscriptions/checkout", auth.Middleware(verifier, http.HandlerFunc(subscriptions.NewCheckoutHandler(subSvc))))
+	http.Handle("/subscriptions/checkout-return", http.HandlerFunc(subscriptions.NewCheckoutReturnHandler(subCfg)))
+	http.Handle("/subscriptions/webhook", http.HandlerFunc(subscriptions.NewWebhookHandler(subSvc)))
 
 	go func() {
 		log.Println("Server is running on port 8080")

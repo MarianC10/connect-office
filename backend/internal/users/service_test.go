@@ -22,6 +22,14 @@ func (f *fakeStore) UpsertFromPrincipal(ctx context.Context, p auth.Principal) (
 	return f.u, nil
 }
 
+func (f *fakeStore) GetStripeCustomerID(ctx context.Context, userID uuid.UUID) (string, error) {
+	return "", nil
+}
+
+func (f *fakeStore) SetStripeCustomerID(ctx context.Context, userID uuid.UUID, customerID string) error {
+	return nil
+}
+
 func TestService_Me_mapsUser(t *testing.T) {
 	uid := uuid.MustParse("33333333-3333-3333-3333-333333333333")
 	email := "c@example.com"

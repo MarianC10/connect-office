@@ -41,6 +41,7 @@ type seedLocation struct {
 	Country     string
 	Latitude    float64
 	Longitude   float64
+	Capacity    int
 	Images      []seedLocationImage
 }
 
@@ -66,6 +67,7 @@ var locationsSeed = []seedLocation{
 		Country:     "Romania",
 		Latitude:    46.7709,
 		Longitude:   23.5969,
+		Capacity:    40,
 		Images: []seedLocationImage{
 			{ID: "cluj-lobby", URL: "http://localhost:8082/locations/cluj/lobby.jpg"},
 			{ID: "cluj-open-space", URL: "http://localhost:8082/locations/cluj/open-space.jpg"},
@@ -81,6 +83,7 @@ var locationsSeed = []seedLocation{
 		Country:     "Romania",
 		Latitude:    44.5112,
 		Longitude:   26.0840,
+		Capacity:    60,
 		Images: []seedLocationImage{
 			{ID: "bucharest-exterior", URL: "http://localhost:8082/locations/bucharest/exterior.jpg"},
 			{ID: "bucharest-meeting-room", URL: "http://localhost:8082/locations/bucharest/meeting-room.jpg"},
@@ -96,6 +99,7 @@ var locationsSeed = []seedLocation{
 		Country:     "Romania",
 		Latitude:    45.7489,
 		Longitude:   21.2087,
+		Capacity:    30,
 		Images: []seedLocationImage{
 			{ID: "timisoara-common-area", URL: "http://localhost:8082/locations/timisoara/common-area.jpg"},
 			{ID: "timisoara-focus-zone", URL: "http://localhost:8082/locations/timisoara/focus-zone.jpg"},
@@ -145,6 +149,38 @@ var locationAmenitiesSeed = []seedLink{
 	{LocationID: locTimis, AmenityID: amAccessible},
 }
 
+type seedSubscriptionPlan struct {
+	PlanType      string
+	Name          string
+	Perks         []string
+	StripePriceID string
+	SortOrder     int
+}
+
+var subscriptionPlansSeed = []seedSubscriptionPlan{
+	{
+		PlanType:      "entrances_10",
+		Name:          "10 Entrances",
+		Perks:         []string{"10 office visits", "Use anytime"},
+		StripePriceID: "price_1TiJsECIn96S0hwmeIhTZI1C",
+		SortOrder:     1,
+	},
+	{
+		PlanType:      "monthly",
+		Name:          "Monthly",
+		Perks:         []string{"Unlimited entrances", "Renews monthly"},
+		StripePriceID: "price_1TiJsrCIn96S0hwm109VmxzE",
+		SortOrder:     2,
+	},
+	{
+		PlanType:      "yearly",
+		Name:          "Yearly",
+		Perks:         []string{"Unlimited entrances", "Best value"},
+		StripePriceID: "price_1TiJtICIn96S0hwmYDhnRzpQ",
+		SortOrder:     3,
+	},
+}
+
 func main() {
 	if err := godotenv.Load(".env"); err != nil {
 		_ = godotenv.Load("backend/.env")
@@ -183,9 +219,9 @@ func main() {
 		}
 
 		_, err = tx.Exec(ctx, `
-INSERT INTO locations (id, name, description, address, city, county, country, latitude, longitude, images)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)`,
-			loc.ID, loc.Name, loc.Description, loc.Address, loc.City, loc.County, loc.Country, loc.Latitude, loc.Longitude, imagesJSON)
+INSERT INTO locations (id, name, description, address, city, county, country, latitude, longitude, capacity, images)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)`,
+			loc.ID, loc.Name, loc.Description, loc.Address, loc.City, loc.County, loc.Country, loc.Latitude, loc.Longitude, loc.Capacity, imagesJSON)
 		if err != nil {
 			log.Fatalf("insert location %s: %v", loc.Name, err)
 		}
@@ -209,9 +245,30 @@ INSERT INTO location_amenities (location_id, amenity_id) VALUES ($1, $2)`,
 		}
 	}
 
+	for _, plan := range subscriptionPlansSeed {
+		perksJSON, err := json.Marshal(plan.Perks)
+		if err != nil {
+			log.Fatalf("marshal perks for %s: %v", plan.PlanType, err)
+		}
+
+		_, err = tx.Exec(ctx, `
+INSERT INTO subscription_plans (plan_type, name, perks, stripe_price_id, sort_order)
+VALUES ($1, $2, $3::jsonb, $4, $5)
+ON CONFLICT (plan_type) DO UPDATE SET
+	name = EXCLUDED.name,
+	perks = EXCLUDED.perks,
+	stripe_price_id = EXCLUDED.stripe_price_id,
+	sort_order = EXCLUDED.sort_order,
+	updated_at = now()`,
+			plan.PlanType, plan.Name, perksJSON, plan.StripePriceID, plan.SortOrder)
+		if err != nil {
+			log.Fatalf("upsert subscription plan %s: %v", plan.PlanType, err)
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		log.Fatalf("commit: %v", err)
 	}
 
-	fmt.Println("seed completed:", len(locationsSeed), "locations,", len(amenitiesSeed), "amenities,", len(locationAmenitiesSeed), "links")
+	fmt.Println("seed completed:", len(locationsSeed), "locations,", len(amenitiesSeed), "amenities,", len(locationAmenitiesSeed), "links,", len(subscriptionPlansSeed), "subscription plans")
 }
