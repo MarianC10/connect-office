@@ -58,6 +58,21 @@ Use **feature flags** for changes that are incomplete, risky, or experimental so
    - `cd backend`
    - `go run ./cmd/server`
 
+### Stripe subscriptions (local webhooks)
+
+Stripe activates subscriptions via webhooks when checkout completes. For local development, forward events from Stripe to your backend with the Stripe CLI:
+
+1. Install the CLI globally:
+   - `npm i -g @stripe/stripe-cli`
+2. Log in to your Stripe account (session expires after 90 days):
+   - `npx stripe login`
+3. Forward webhook events to the backend (default port `8080`; change if your server uses another port):
+   - `npx stripe listen --forward-to localhost:8080/subscriptions/webhook`
+
+Keep the `stripe listen` process running while testing checkout. Set `STRIPE_SECRET_KEY` in `backend/.env` (see `backend/.env.example`).
+
+Stripe Price IDs for each plan are stored in `subscription_plans.stripe_price_id` and applied when you run `go run ./cmd/seed` from `backend/`.
+
 ### Closing / cleanup
 
 - Stop and remove backend dependencies:

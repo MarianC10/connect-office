@@ -189,7 +189,7 @@ export default function ProfileScreen() {
             <MenuItem
               icon={<Feather name="credit-card" size={22} color="#333" />}
               label="Subscription"
-              // onPress={() => router.push('/profile/subscription')}
+              onPress={() => router.push('/profile/subscription')}
             />
             <View style={styles.separator} />
 

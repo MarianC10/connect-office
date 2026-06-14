@@ -149,6 +149,38 @@ var locationAmenitiesSeed = []seedLink{
 	{LocationID: locTimis, AmenityID: amAccessible},
 }
 
+type seedSubscriptionPlan struct {
+	PlanType      string
+	Name          string
+	Perks         []string
+	StripePriceID string
+	SortOrder     int
+}
+
+var subscriptionPlansSeed = []seedSubscriptionPlan{
+	{
+		PlanType:      "entrances_10",
+		Name:          "10 Entrances",
+		Perks:         []string{"10 office visits", "Use anytime"},
+		StripePriceID: "price_1TiJsECIn96S0hwmeIhTZI1C",
+		SortOrder:     1,
+	},
+	{
+		PlanType:      "monthly",
+		Name:          "Monthly",
+		Perks:         []string{"Unlimited entrances", "Renews monthly"},
+		StripePriceID: "price_1TiJsrCIn96S0hwm109VmxzE",
+		SortOrder:     2,
+	},
+	{
+		PlanType:      "yearly",
+		Name:          "Yearly",
+		Perks:         []string{"Unlimited entrances", "Best value"},
+		StripePriceID: "price_1TiJtICIn96S0hwmYDhnRzpQ",
+		SortOrder:     3,
+	},
+}
+
 func main() {
 	if err := godotenv.Load(".env"); err != nil {
 		_ = godotenv.Load("backend/.env")
@@ -213,9 +245,30 @@ INSERT INTO location_amenities (location_id, amenity_id) VALUES ($1, $2)`,
 		}
 	}
 
+	for _, plan := range subscriptionPlansSeed {
+		perksJSON, err := json.Marshal(plan.Perks)
+		if err != nil {
+			log.Fatalf("marshal perks for %s: %v", plan.PlanType, err)
+		}
+
+		_, err = tx.Exec(ctx, `
+INSERT INTO subscription_plans (plan_type, name, perks, stripe_price_id, sort_order)
+VALUES ($1, $2, $3::jsonb, $4, $5)
+ON CONFLICT (plan_type) DO UPDATE SET
+	name = EXCLUDED.name,
+	perks = EXCLUDED.perks,
+	stripe_price_id = EXCLUDED.stripe_price_id,
+	sort_order = EXCLUDED.sort_order,
+	updated_at = now()`,
+			plan.PlanType, plan.Name, perksJSON, plan.StripePriceID, plan.SortOrder)
+		if err != nil {
+			log.Fatalf("upsert subscription plan %s: %v", plan.PlanType, err)
+		}
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		log.Fatalf("commit: %v", err)
 	}
 
-	fmt.Println("seed completed:", len(locationsSeed), "locations,", len(amenitiesSeed), "amenities,", len(locationAmenitiesSeed), "links")
+	fmt.Println("seed completed:", len(locationsSeed), "locations,", len(amenitiesSeed), "amenities,", len(locationAmenitiesSeed), "links,", len(subscriptionPlansSeed), "subscription plans")
 }
