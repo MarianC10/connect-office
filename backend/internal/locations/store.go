@@ -78,6 +78,7 @@ func locationToResponse(loc Location) LocationResponse {
 		Country:     loc.Country,
 		Latitude:    loc.Latitude,
 		Longitude:   loc.Longitude,
+		Capacity:    loc.Capacity,
 		Images:      images,
 		Amenities:   amenities,
 	}

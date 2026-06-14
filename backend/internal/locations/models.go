@@ -20,6 +20,7 @@ type LocationResponse struct {
 	Country     string            `json:"country"`
 	Latitude    float64           `json:"latitude"`
 	Longitude   float64           `json:"longitude"`
+	Capacity    int               `json:"capacity"`
 	Images      []LocationImageResponse `json:"images"`
 	Amenities   []AmenityResponse `json:"amenities"`
 }
