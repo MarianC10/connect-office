@@ -45,10 +45,6 @@ func (h *handlerFakeStore) HasConfirmedForUserOnDate(ctx context.Context, userID
 	return false, nil
 }
 
-func (h *handlerFakeStore) HasConfirmedAtLocationOnDate(ctx context.Context, userID, locationID uuid.UUID, date time.Time) (bool, error) {
-	return false, nil
-}
-
 func TestHandler_CreateBooking(t *testing.T) {
 	uid := uuid.New()
 	locID := uuid.New()

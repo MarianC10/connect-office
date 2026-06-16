@@ -269,30 +269,6 @@ var All = []Migration{
 			return nil
 		},
 	},
-	{
-		ID:          "0011_check_ins",
-		Description: "Create check_ins table for office presence",
-		Up: func(ctx context.Context, tx *gorm.DB) error {
-			statements := []string{
-				`CREATE TABLE IF NOT EXISTS check_ins (
-					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-					user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-					location_id UUID NOT NULL REFERENCES locations (id) ON DELETE CASCADE,
-					check_in_date DATE NOT NULL,
-					checked_in_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-					UNIQUE (user_id, location_id, check_in_date)
-				)`,
-				`CREATE INDEX IF NOT EXISTS check_ins_location_date_idx
-					ON check_ins (location_id, check_in_date)`,
-			}
-			for _, stmt := range statements {
-				if err := tx.WithContext(ctx).Exec(stmt).Error; err != nil {
-					return err
-				}
-			}
-			return nil
-		},
-	},
 }
 
 func Run(ctx context.Context, db *gorm.DB) error {

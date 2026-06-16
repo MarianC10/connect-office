@@ -24,8 +24,6 @@ import (
 
 	"github.com/MarianC10/connect-office/backend/internal/bookings"
 
-	"github.com/MarianC10/connect-office/backend/internal/checkins"
-
 	"github.com/MarianC10/connect-office/backend/internal/friends"
 
 	"github.com/MarianC10/connect-office/backend/internal/locations"
@@ -230,12 +228,6 @@ func main() {
 
 
 
-	checkInStore := checkins.NewPostgresStore(db, userCfg)
-
-	checkInSvc := checkins.NewService(checkInStore, bookingStore, locSvc)
-
-
-
 	srv := &http.Server{
 
 		Addr:              ":8080",
@@ -249,22 +241,6 @@ func main() {
 	http.Handle("/locations", auth.Middleware(verifier, http.HandlerFunc(locations.NewGetLocationsHandler(locSvc))))
 
 	http.Handle("/locations/", auth.Middleware(verifier, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-
-		if strings.HasSuffix(r.URL.Path, "/check-ins/visible") {
-
-			social.WithSocialEnabled(socialCfg, checkins.NewVisibleCheckInsHandler(checkInSvc))(w, r)
-
-			return
-
-		}
-
-		if strings.HasSuffix(r.URL.Path, "/check-in") {
-
-			social.WithSocialEnabled(socialCfg, checkins.NewCheckInHandler(checkInSvc))(w, r)
-
-			return
-
-		}
 
 		if strings.HasSuffix(r.URL.Path, "/bookings/visible") {
 

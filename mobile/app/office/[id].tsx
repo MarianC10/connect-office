@@ -30,15 +30,9 @@ import {
 } from '@/lib/bookings';
 import { UserAvatar } from '@/components/user-avatar';
 import {
-  fetchMe,
   fetchVisibleBookings,
   VisibleBookingPerson,
 } from '@/lib/profile';
-import {
-  checkInAtOffice,
-  fetchVisibleCheckIns,
-  VisibleCheckInPerson,
-} from '@/lib/checkins';
 import { SOCIAL_ENABLED } from '@/lib/social-config';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -97,7 +91,7 @@ function parseDateKey(dateKey: string): Date {
   return new Date(year, month - 1, day);
 }
 
-type OfficePerson = VisibleBookingPerson | VisibleCheckInPerson;
+type OfficePerson = VisibleBookingPerson;
 
 function PersonList({
   people,
@@ -222,13 +216,7 @@ export default function OfficeDetailScreen() {
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const [reserving, setReserving] = useState(false);
   const [bookedPeople, setBookedPeople] = useState<VisibleBookingPerson[]>([]);
-  const [checkedInPeople, setCheckedInPeople] = useState<VisibleCheckInPerson[]>([]);
   const [peopleLoading, setPeopleLoading] = useState(false);
-  const [checkingIn, setCheckingIn] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [officeUserBookings, setOfficeUserBookings] = useState<Map<string, Booking>>(
-    new Map()
-  );
   const [peopleDate, setPeopleDate] = useState(() => todayInBucharest());
 
   useEffect(() => {
@@ -272,7 +260,6 @@ export default function OfficeDetailScreen() {
   useEffect(() => {
     if (!SOCIAL_ENABLED || !locationId) {
       setBookedPeople([]);
-      setCheckedInPeople([]);
       return;
     }
 
@@ -280,36 +267,19 @@ export default function OfficeDetailScreen() {
     setPeopleLoading(true);
 
     const loadPeople = async () => {
-      setPeopleLoading(true);
-
-      const bookedPromise = fetchVisibleBookings(locationId, peopleDate)
-        .then((booked) => {
-          if (!cancelled) {
-            setBookedPeople(booked);
-          }
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setBookedPeople([]);
-          }
-        });
-
-      const checkedInPromise = fetchVisibleCheckIns(locationId, peopleDate)
-        .then((checkedIn) => {
-          if (!cancelled) {
-            setCheckedInPeople(checkedIn);
-          }
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setCheckedInPeople([]);
-          }
-        });
-
-      await Promise.all([bookedPromise, checkedInPromise]);
-
-      if (!cancelled) {
-        setPeopleLoading(false);
+      try {
+        const booked = await fetchVisibleBookings(locationId, peopleDate);
+        if (!cancelled) {
+          setBookedPeople(booked);
+        }
+      } catch {
+        if (!cancelled) {
+          setBookedPeople([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setPeopleLoading(false);
+        }
       }
     };
 
@@ -319,39 +289,6 @@ export default function OfficeDetailScreen() {
       cancelled = true;
     };
   }, [locationId, peopleDate]);
-
-  useEffect(() => {
-    if (!SOCIAL_ENABLED) {
-      return;
-    }
-
-    let cancelled = false;
-
-    const loadSocialContext = async () => {
-      try {
-        const [me, bookings] = await Promise.all([fetchMe(), listBookings()]);
-        if (cancelled) return;
-
-        setCurrentUserId(me.id);
-
-        const byDate = new Map<string, Booking>();
-        for (const booking of bookings) {
-          byDate.set(booking.booking_date, booking);
-        }
-        setOfficeUserBookings(byDate);
-      } catch {
-        if (!cancelled) {
-          setOfficeUserBookings(new Map());
-        }
-      }
-    };
-
-    void loadSocialContext();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [locationId]);
 
   useEffect(() => {
     if (!bookingVisible || !selectedDate) {
@@ -609,42 +546,11 @@ export default function OfficeDetailScreen() {
     !!selectedUserBooking ||
     availability?.status === 'full';
 
-  const isToday = peopleDate === todayInBucharest();
-  const userBookingOnDate = officeUserBookings.get(peopleDate);
-  const userBookedHere =
-    userBookingOnDate?.location.id === locationId &&
-    userBookingOnDate?.status === 'confirmed';
-  const userCheckedIn =
-    currentUserId != null &&
-    checkedInPeople.some((person) => person.user_id === currentUserId);
-  const showCheckInButton =
-    SOCIAL_ENABLED && isToday && userBookedHere && !userCheckedIn;
-
   const openUserProfile = (userId: string) => {
     router.push({
       pathname: '/users/[id]',
       params: { id: userId },
     } as never);
-  };
-
-  const handleCheckIn = async () => {
-    if (!locationId || !isToday) {
-      return;
-    }
-
-    setCheckingIn(true);
-    try {
-      await checkInAtOffice(locationId, peopleDate);
-      const checkedIn = await fetchVisibleCheckIns(locationId, peopleDate);
-      setCheckedInPeople(checkedIn);
-    } catch (err) {
-      Alert.alert(
-        'Check-in failed',
-        err instanceof Error ? err.message : 'Could not check in.'
-      );
-    } finally {
-      setCheckingIn(false);
-    }
   };
 
   if (loading) {
@@ -775,7 +681,7 @@ export default function OfficeDetailScreen() {
                   Booked · {formatBookingDateLabel(peopleDate)}
                 </Text>
                 <Text style={styles.peopleSubtitle}>
-                  People with a reservation for this day
+                  Friends and public profiles with a reservation for this day
                 </Text>
                 {peopleLoading ? (
                   <ActivityIndicator color="#1E2A5E" style={styles.peopleLoader} />
@@ -785,42 +691,6 @@ export default function OfficeDetailScreen() {
                     emptyMessage="No friends or public bookers for this day yet."
                     onPressPerson={openUserProfile}
                   />
-                )}
-
-                <View style={styles.peopleDivider} />
-
-                <Text style={styles.peopleTitle}>People here</Text>
-                <Text style={styles.peopleSubtitle}>
-                  {isToday
-                    ? 'Checked in at this office today'
-                    : 'Check-ins are only shown for today'}
-                </Text>
-                {peopleLoading ? (
-                  <ActivityIndicator color="#1E2A5E" style={styles.peopleLoader} />
-                ) : (
-                  <PersonList
-                    people={isToday ? checkedInPeople : []}
-                    emptyMessage={
-                      isToday
-                        ? 'Nobody has checked in yet.'
-                        : 'Select today to see who is here.'
-                    }
-                    onPressPerson={openUserProfile}
-                  />
-                )}
-
-                {showCheckInButton && (
-                  <TouchableOpacity
-                    style={styles.checkInButton}
-                    disabled={checkingIn}
-                    onPress={() => void handleCheckIn()}
-                  >
-                    {checkingIn ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <Text style={styles.checkInButtonText}>Check in</Text>
-                    )}
-                  </TouchableOpacity>
                 )}
               </View>
             )}
@@ -1402,27 +1272,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#666',
     marginBottom: 8,
-    fontFamily: 'serif',
-  },
-
-  peopleDivider: {
-    height: 1,
-    backgroundColor: 'rgba(30, 42, 94, 0.12)',
-    marginVertical: 14,
-  },
-
-  checkInButton: {
-    marginTop: 12,
-    backgroundColor: '#1E2A5E',
-    borderRadius: 18,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-
-  checkInButtonText: {
-    color: '#fff',
-    fontSize: 15,
-    fontWeight: '700',
     fontFamily: 'serif',
   },
 

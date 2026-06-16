@@ -28,8 +28,8 @@ Exhaustive plan for adding social features to Connect Office. Work is split into
 | Display name | Server-side on `users.display_name`; `PATCH /me` is source of truth |
 | Bookings backend | Full REST API — see `BOOKINGS_API.md` |
 | Bookings mobile | **Wired** (PR 1) |
-| Check-in | **Implemented** — `check_ins` table; `POST /locations/{id}/check-in`, `GET .../check-ins/visible` |
-| Social / chat | **PR 2 done** (profiles, friends, visible bookings, check-in); chat deferred to PR 3 |
+| Check-in | **Not implemented** (deferred) |
+| Social / chat | **PR 2 done** (profiles, friends, visible bookings); chat deferred to PR 3 |
 | WebSockets | **Not implemented** |
 | Push notifications | **Not implemented** |
 
@@ -63,10 +63,9 @@ Exhaustive plan for adding social features to Connect Office. Work is split into
 
 ### Office presence (V1)
 
-- On the office detail page, show **Booked** (confirmed bookings) and **People here** (checked-in today) for the selected date.
-- **Booked** sources: **friends** (any visibility) + **public** users with a confirmed booking.
-- **People here** sources: **friends** + **public** users who checked in at that location on the date.
-- Check-in is a separate action (`POST /locations/{id}/check-in`); one check-in per user per location per day.
+- On the office detail page, show **who is booked** at that location on the selected date.
+- Sources: **friends** (any visibility) + **public** users with a confirmed booking.
+- **Check-in / live presence:** deferred; day **bookings** only for V1.
 
 ---
 
@@ -74,7 +73,7 @@ Exhaustive plan for adding social features to Connect Office. Work is split into
 
 | Decision | Choice |
 |----------|--------|
-| Friend activity V1 | Confirmed **bookings** + **check-ins** on office page |
+| Friend activity V1 | Confirmed **bookings** only (no check-in) |
 | Messaging transport | **WebSockets** from the start (not REST polling) |
 | WebSocket library | [`github.com/coder/websocket`](https://github.com/coder/websocket) |
 | Message storage | Postgres, plaintext V1 |
@@ -161,16 +160,16 @@ Booking window: **today … today+9** calendar days in **Europe/Bucharest**. One
 
 ## PR 2 — Profiles, visibility, friends (done)
 
-**Goal:** Server-side profiles, public/private toggle, discover users, friend requests + inbox, show booked and checked-in people on office page.
+**Goal:** Server-side profiles, public/private toggle, discover users, friend requests + inbox, show booked people on office page.
 
 **Branch:** `feat/social-profiles-friends` (squash merge to `main`).
 
-**Also shipped beyond original PR 2 scope:**
+**Notes:**
 
-- Check-in slice (`0011_check_ins`, `backend/internal/checkins/`)
 - Display name: backend is source of truth; Supabase `preferred_username` synced on save and used as fallback on load (`mobile/lib/display-name.ts`)
 - Find people: name search only on `people/search.tsx`; **Add friend by email** opens `people/add-by-email.tsx` (no search icon on email flow)
 - Avatars: API always returns full `avatar_url`; mobile uses `UserAvatarPlaceholder` when URL not yet loaded (no bundled default image)
+- Email is read-only on edit profile (account identifier)
 
 ### Migrations
 
@@ -222,18 +221,6 @@ Indexes:
 Unique on `(user_a_id, user_b_id)`.
 
 **Accept flow:** transaction — insert friendship, set request `accepted`. Decline sets `declined` (or delete row; prefer status for audit).
-
-#### `0011_check_ins`
-
-| Column | Type |
-|--------|------|
-| `id` | UUID PK |
-| `user_id` | UUID FK → `users` |
-| `location_id` | UUID FK → `locations` |
-| `check_in_date` | `DATE` |
-| `checked_in_at` | timestamptz |
-
-Unique on `(user_id, location_id, check_in_date)`. Index on `(location_id, check_in_date)`.
 
 ### Backend slices
 
@@ -297,13 +284,6 @@ Structure: `handler.go`, `service.go`, `store.go`, `gorm_model.go`, `models.go`,
 
 Register route under `/locations/` prefix in `main.go` (before or after availability handler).
 
-#### New `backend/internal/checkins/`
-
-| Method | Path | Notes |
-|--------|------|-------|
-| POST | `/locations/{id}/check-in` | Body optional `{ date }` (defaults today Bucharest); 409 if already checked in |
-| GET | `/locations/{id}/check-ins/visible?date=` | Friends + public users checked in on date |
-
 #### Feature flag — `backend/internal/social/config.go`
 
 Mirror `backend/internal/subscriptions/config.go`:
@@ -327,7 +307,6 @@ When disabled: all social/friends/chat routes return **404**; register no-op han
 |------|-----------|
 | `mobile/lib/profile.ts` | `fetchMe`, `updateMe`, `uploadAvatar`, `searchUsers`, `fetchUserProfile` |
 | `mobile/lib/friends.ts` | `sendFriendRequest`, `fetchInbox`, `acceptRequest`, `declineRequest`, `listFriends` |
-| `mobile/lib/checkins.ts` | `checkIn`, `fetchVisibleCheckIns` |
 | `mobile/lib/display-name.ts` | Supabase ↔ backend display name sync helpers |
 
 Follow `mobile/lib/subscriptions.ts` patterns: typed models, `authFetch`, domain errors.
@@ -369,22 +348,20 @@ Gate People tab and social screens when false.
 `mobile/app/office/[id].tsx`:
 
 - **Booked** section: `GET /locations/{id}/bookings/visible?date=`
-- **People here** section: `GET /locations/{id}/check-ins/visible?date=`
-- **Check in** button when user has a confirmed booking for the date
 - Date follows booking modal while open; resets to today when modal closes
 - Tap person → `users/[id]`
 
 ### PR 2 implementation order (completed)
 
-1. Migrations `0009`, `0010`, `0011_check_ins`
+1. Migrations `0009`, `0010`
 2. Users profile API (`GET/PATCH /me`, search, lookup, public profile, avatar upload)
 3. `SOCIAL_ENABLED` config + route guards
 4. Friends slice (REST)
-5. Visible bookings + check-ins endpoints
-6. `mobile/lib/profile.ts`, `mobile/lib/friends.ts`, `mobile/lib/checkins.ts`
+5. Visible bookings endpoint
+6. `mobile/lib/profile.ts`, `mobile/lib/friends.ts`
 7. People tab + search + add-by-email + user profile screens
 8. Profile edit toggle + avatar picker
-9. Office Booked / People here sections + check-in
+9. Office **Booked** section
 
 ---
 
@@ -392,7 +369,7 @@ Gate People tab and social screens when false.
 
 **Goal:** 1:1 messaging between friends; messages in Postgres; real-time via WebSocket.
 
-### Migration `0012_messages`
+### Migration `0011_messages`
 
 **`conversations`**
 
@@ -500,7 +477,7 @@ All behind `SOCIAL_ENABLED`.
 
 ### PR 3 implementation order
 
-1. Migration `0012`
+1. Migration `0011`
 2. Chat store/service + REST handlers
 3. WebSocket hub + upgrade handler
 4. Wire friend-request push events
@@ -542,7 +519,7 @@ When off: API returns **404**; mobile hides social UI. **Bookings unaffected.**
 
 | Item | Notes |
 |------|-------|
-| Live presence beyond check-in | GPS, auto check-out, etc. |
+| Check-in / live presence | New model + API; show alongside bookings later |
 | E2E encryption | Key exchange, device storage; use `ciphertext_version` hook |
 | Push notifications | `expo-notifications`; WS covers foreground V1 |
 | Typing indicators, read receipts beyond `last_read_at` | Optional polish |
@@ -571,7 +548,6 @@ When off: API returns **404**; mobile hides social UI. **Bookings unaffected.**
 - [x] Private user addable by exact email (`people/add-by-email.tsx`)
 - [x] Friend request inbox: approve creates friendship; decline clears pending
 - [x] Office **Booked** list shows friends + public bookers for selected date
-- [x] Office **People here** + check-in for users with booking
 - [x] Display name syncs to Supabase on profile save
 - [ ] `SOCIAL_ENABLED=false` → 404 on social API, People tab hidden
 
@@ -598,14 +574,13 @@ When off: API returns **404**; mobile hides social UI. **Bookings unaffected.**
 
 ### PR 2 (done)
 
-- `backend/internal/migrations/migrations.go` — `0009`, `0010`, `0011_check_ins`
+- `backend/internal/migrations/migrations.go` — `0009`, `0010`
 - `backend/internal/users/*` — profile API, avatar upload, email lookup rate limit
 - `backend/internal/friends/*` (new)
 - `backend/internal/social/*` (new)
-- `backend/internal/checkins/*` (new)
 - `backend/static/avatars/default.png`
 - `backend/cmd/server/main.go`, `backend/cmd/seed/main.go`
-- `mobile/lib/profile.ts`, `mobile/lib/friends.ts`, `mobile/lib/checkins.ts`, `mobile/lib/display-name.ts`, `mobile/lib/social-config.ts`
+- `mobile/lib/profile.ts`, `mobile/lib/friends.ts`, `mobile/lib/display-name.ts`, `mobile/lib/social-config.ts`
 - `mobile/components/user-avatar.tsx`
 - `mobile/app/(tabs)/people.tsx`, `mobile/app/(tabs)/_layout.tsx`
 - `mobile/app/people/search.tsx`, `mobile/app/people/add-by-email.tsx`, `mobile/app/users/[id].tsx`
@@ -616,7 +591,7 @@ When off: API returns **404**; mobile hides social UI. **Bookings unaffected.**
 
 ### PR 3 (planned)
 
-- `backend/internal/migrations/migrations.go` — `0012_messages`
+- `backend/internal/migrations/migrations.go` — `0011_messages`
 - `backend/internal/chat/*` (new)
 - `backend/internal/chat/ws/*` (new)
 - `backend/go.mod` — `github.com/coder/websocket`
