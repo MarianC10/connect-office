@@ -111,23 +111,8 @@ const DEFAULT_REGION: Region = {
 };
 
 
-function getStaticFilesBaseUrl() {
-  return API_BASE_URL.replace(/\/$/, "").replace(/:\d+$/, ":8082");
-}
-
-function normalizeLocationImageUrl(url?: string | null) {
-  if (!url) return null;
-
-  const staticFilesBaseUrl = getStaticFilesBaseUrl();
-
-  return url
-    .replace(/^http:\/\/localhost:8082/i, staticFilesBaseUrl)
-    .replace(/^http:\/\/127\.0\.0\.1:8082/i, staticFilesBaseUrl)
-    .replace(/^http:\/\/10\.0\.2\.2:8082/i, staticFilesBaseUrl);
-}
-
 function getLocationMainImage(location: Location) {
-  return normalizeLocationImageUrl(location.images?.[0]?.url);
+  return location.images?.[0]?.url ?? null;
 }
 
 // ─── Fetch hook ───────────────────────────────────────────────────────────────

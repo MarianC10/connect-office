@@ -16,10 +16,37 @@ import { Feather, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { getAccessToken } from '@/lib/api';
-import { API_BASE_URL } from '@/lib/env';
+import { authFetch } from '@/lib/api';
+import {
+  Booking,
+  BookingConflictError,
+  createBooking,
+  formatBookingDateLabel,
+  getBookingWindowDateKeys,
+  getLocationAvailability,
+  listBookings,
+  LocationAvailability,
+  todayInBucharest,
+} from '@/lib/bookings';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+const MONTH_NAMES = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+const WEEK_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 type Amenity = {
   name: string;
@@ -41,67 +68,21 @@ type OfficeLocation = {
   country: string;
   latitude: number;
   longitude: number;
+  capacity?: number;
   images: LocationImage[];
   amenities: Amenity[];
 };
-
-const MONTH_NAMES = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
-
-const WEEK_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-function getStaticFilesBaseUrl() {
-  return API_BASE_URL.replace(/\/$/, '').replace(/:\d+$/, ':8082');
-}
-
-function normalizeImageUrl(url?: string | null) {
-  if (!url) return null;
-
-  const staticFilesBaseUrl = getStaticFilesBaseUrl();
-
-  return url
-    .replace(/^http:\/\/localhost:8082/i, staticFilesBaseUrl)
-    .replace(/^http:\/\/127\.0\.0\.1:8082/i, staticFilesBaseUrl)
-    .replace(/^http:\/\/10\.0\.2\.2:8082/i, staticFilesBaseUrl);
-}
 
 function makeDateKey(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
-
   return `${year}-${month}-${day}`;
 }
 
-function makeDateLabel(dateKey: string) {
-  const date = new Date(`${dateKey}T00:00:00`);
-
-  return `${date.getDate()} ${MONTH_NAMES[date.getMonth()]} ${date.getFullYear()}`;
-}
-
-function isDateAvailable(date: Date) {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const currentDate = new Date(date);
-  currentDate.setHours(0, 0, 0, 0);
-
-  const isPast = currentDate < today;
-  const isSunday = currentDate.getDay() === 0;
-
-  return !isPast && !isSunday;
+function parseDateKey(dateKey: string): Date {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  return new Date(year, month - 1, day);
 }
 
 function getAmenityIcon(name: string) {
@@ -148,11 +129,29 @@ function getAmenityIcon(name: string) {
   return <Feather name="check-circle" size={21} color="#000" />;
 }
 
+function availabilityBannerText(availability: LocationAvailability | null) {
+  if (!availability) return null;
+
+  if (availability.status === 'busy') {
+    return 'This office is busy on this day — seating may be limited.';
+  }
+
+  if (availability.status === 'full') {
+    return 'Fully booked for this day.';
+  }
+
+  return null;
+}
+
 export default function OfficeDetailScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
 
   const locationId = Array.isArray(id) ? id[0] : id;
+  const bookingWindowSet = useMemo(
+    () => new Set(getBookingWindowDateKeys()),
+    []
+  );
 
   const [office, setOffice] = useState<OfficeLocation | null>(null);
   const [loading, setLoading] = useState(true);
@@ -161,21 +160,26 @@ export default function OfficeDetailScreen() {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
 
   const [bookingVisible, setBookingVisible] = useState(false);
-  const [calendarMonth, setCalendarMonth] = useState(() => new Date());
-  const [selectedDates, setSelectedDates] = useState<string[]>([]);
+  const [calendarMonth, setCalendarMonth] = useState(() =>
+    parseDateKey(todayInBucharest())
+  );
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [userBookingsByDate, setUserBookingsByDate] = useState<
+    Map<string, Booking>
+  >(new Map());
+  const [bookingsLoading, setBookingsLoading] = useState(false);
+  const [availability, setAvailability] = useState<LocationAvailability | null>(
+    null
+  );
+  const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [reserving, setReserving] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
 
     const loadOffice = async () => {
       try {
-        const token = await getAccessToken();
-
-        const response = await fetch(`${API_BASE_URL}/locations/${locationId}`, {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
+        const response = await authFetch(`/locations/${locationId}`);
 
         if (!response.ok) {
           throw new Error(`Server error: HTTP ${response.status}`);
@@ -208,13 +212,116 @@ export default function OfficeDetailScreen() {
     };
   }, [locationId]);
 
+  useEffect(() => {
+    if (!bookingVisible) {
+      return;
+    }
+
+    let cancelled = false;
+    setBookingsLoading(true);
+
+    const loadUserBookings = async () => {
+      try {
+        const bookings = await listBookings();
+        if (cancelled) return;
+
+        const byDate = new Map<string, Booking>();
+        for (const booking of bookings) {
+          byDate.set(booking.booking_date, booking);
+        }
+        setUserBookingsByDate(byDate);
+      } catch (err) {
+        if (!cancelled) {
+          Alert.alert(
+            'Error',
+            err instanceof Error ? err.message : 'Could not load your bookings.'
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setBookingsLoading(false);
+        }
+      }
+    };
+
+    void loadUserBookings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bookingVisible]);
+
+  useEffect(() => {
+    if (!bookingVisible || !locationId || !selectedDate) {
+      setAvailability(null);
+      return;
+    }
+
+    if (userBookingsByDate.has(selectedDate)) {
+      setAvailability(null);
+      return;
+    }
+
+    let cancelled = false;
+    setAvailabilityLoading(true);
+
+    const loadAvailability = async () => {
+      try {
+        const data = await getLocationAvailability(locationId, selectedDate);
+        if (!cancelled) {
+          setAvailability(data);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setAvailability(null);
+          Alert.alert(
+            'Error',
+            err instanceof Error ? err.message : 'Could not load availability.'
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setAvailabilityLoading(false);
+        }
+      }
+    };
+
+    void loadAvailability();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [bookingVisible, locationId, selectedDate, userBookingsByDate]);
+
   const imageUrls = useMemo(() => {
     if (!office?.images) return [];
 
-    return office.images
-      .map((image) => normalizeImageUrl(image.url))
-      .filter(Boolean) as string[];
+    return office.images.map((image) => image.url).filter(Boolean);
   }, [office]);
+
+  const calendarDays = useMemo(() => {
+    const year = calendarMonth.getFullYear();
+    const month = calendarMonth.getMonth();
+
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+
+    const days: (Date | null)[] = [];
+
+    for (let i = 0; i < firstDay.getDay(); i += 1) {
+      days.push(null);
+    }
+
+    for (let day = 1; day <= lastDay.getDate(); day += 1) {
+      days.push(new Date(year, month, day));
+    }
+
+    return days;
+  }, [calendarMonth]);
+
+  const selectedUserBooking = selectedDate
+    ? userBookingsByDate.get(selectedDate)
+    : undefined;
 
   const handleShareOffice = async () => {
     if (!office) return;
@@ -243,42 +350,20 @@ export default function OfficeDetailScreen() {
     }
   };
 
-  const calendarDays = useMemo(() => {
-    const year = calendarMonth.getFullYear();
-    const month = calendarMonth.getMonth();
+  const openBookingModal = () => {
+    const todayKey = todayInBucharest();
+    setCalendarMonth(parseDateKey(todayKey));
+    setSelectedDate(todayKey);
+    setAvailability(null);
+    setBookingVisible(true);
+  };
 
-    const firstDay = new Date(year, month, 1);
-    const lastDay = new Date(year, month + 1, 0);
-
-    const days: (Date | null)[] = [];
-
-    for (let i = 0; i < firstDay.getDay(); i += 1) {
-      days.push(null);
-    }
-
-    for (let day = 1; day <= lastDay.getDate(); day += 1) {
-      days.push(new Date(year, month, day));
-    }
-
-    return days;
-  }, [calendarMonth]);
-
-  const sortedSelectedDates = useMemo(() => {
-    return [...selectedDates].sort();
-  }, [selectedDates]);
-
-  const toggleDate = (date: Date) => {
-    if (!isDateAvailable(date)) return;
-
+  const selectDate = (date: Date) => {
     const dateKey = makeDateKey(date);
-
-    setSelectedDates((currentDates) => {
-      if (currentDates.includes(dateKey)) {
-        return currentDates.filter((item) => item !== dateKey);
-      }
-
-      return [...currentDates, dateKey];
-    });
+    if (!bookingWindowSet.has(dateKey)) {
+      return;
+    }
+    setSelectedDate(dateKey);
   };
 
   const goToPreviousMonth = () => {
@@ -293,29 +378,83 @@ export default function OfficeDetailScreen() {
     });
   };
 
-  const handleConfirmBooking = () => {
-    if (selectedDates.length === 0) {
-      Alert.alert('No date selected', 'Please select at least one day.');
+  const handleReserve = async () => {
+    if (!locationId || !selectedDate) {
+      Alert.alert('No date selected', 'Please select a day to book.');
       return;
     }
 
-    const selectedDatesText = sortedSelectedDates
-      .map((dateKey) => makeDateLabel(dateKey))
-      .join(', ');
+    if (userBookingsByDate.has(selectedDate)) {
+      return;
+    }
 
-    Alert.alert(
-      'Booking selected',
-      `Selected days: ${selectedDatesText}\n\nLater, this will be saved in the backend.`,
-      [
-        {
-          text: 'OK',
-          onPress: () => {
-            setBookingVisible(false);
+    if (availability?.status === 'full') {
+      return;
+    }
+
+    setReserving(true);
+
+    try {
+      const booking = await createBooking({
+        locationId,
+        bookingDate: selectedDate,
+      });
+
+      setUserBookingsByDate((current) => {
+        const next = new Map(current);
+        next.set(booking.booking_date, booking);
+        return next;
+      });
+
+      Alert.alert(
+        'Booking confirmed',
+        `Reserved ${office?.name ?? 'this office'} on ${formatBookingDateLabel(booking.booking_date)}.`,
+        [
+          {
+            text: 'OK',
+            onPress: () => setBookingVisible(false),
           },
-        },
-      ]
-    );
+        ]
+      );
+    } catch (err) {
+      if (err instanceof BookingConflictError) {
+        if (err.reason === 'already_booked') {
+          Alert.alert(
+            'Already booked',
+            'You already have a booking on this day. You can only book one office per day.'
+          );
+        } else if (err.reason === 'location_full') {
+          Alert.alert(
+            'Fully booked',
+            'This office is fully booked for the selected day.'
+          );
+        } else {
+          Alert.alert('Could not book', err.message);
+        }
+      } else {
+        Alert.alert(
+          'Error',
+          err instanceof Error ? err.message : 'Could not create booking.'
+        );
+      }
+    } finally {
+      setReserving(false);
+    }
   };
+
+  const bannerText = selectedUserBooking
+    ? selectedUserBooking.location.id === locationId
+      ? `You already have a booking at ${office?.name ?? 'this office'} on this day.`
+      : `You already have a booking at ${selectedUserBooking.location.name} on this day.`
+    : availabilityBannerText(availability);
+
+  const reserveDisabled =
+    !selectedDate ||
+    reserving ||
+    bookingsLoading ||
+    availabilityLoading ||
+    !!selectedUserBooking ||
+    availability?.status === 'full';
 
   if (loading) {
     return (
@@ -365,9 +504,9 @@ export default function OfficeDetailScreen() {
                     setActiveImageIndex(index);
                   }}
                 >
-                  {imageUrls.map((url) => (
+                  {imageUrls.map((url, index) => (
                     <Image
-                      key={url}
+                      key={`${url}-${index}`}
                       source={{ uri: url }}
                       style={styles.officeImage}
                     />
@@ -378,7 +517,7 @@ export default function OfficeDetailScreen() {
                   <View style={styles.imageDots}>
                     {imageUrls.map((url, index) => (
                       <View
-                        key={url}
+                        key={`dot-${url}-${index}`}
                         style={[
                           styles.imageDot,
                           index === activeImageIndex && styles.imageDotActive,
@@ -443,7 +582,7 @@ export default function OfficeDetailScreen() {
               <TouchableOpacity
                 activeOpacity={0.8}
                 style={styles.bookButton}
-                onPress={() => setBookingVisible(true)}
+                onPress={openBookingModal}
               >
                 <Text style={styles.bookButtonText}>book</Text>
               </TouchableOpacity>
@@ -461,12 +600,17 @@ export default function OfficeDetailScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.bookingModal}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select booking days</Text>
+              <Text style={styles.modalTitle}>Select booking day</Text>
 
               <TouchableOpacity onPress={() => setBookingVisible(false)}>
                 <Ionicons name="close" size={26} color="#222" />
               </TouchableOpacity>
             </View>
+
+            <Text style={styles.calendarHint}>
+              Bookable days are within the next 10 days (Europe/Bucharest).
+              Days with a dot are already booked by you.
+            </Text>
 
             <View style={styles.monthHeader}>
               <TouchableOpacity
@@ -489,10 +633,6 @@ export default function OfficeDetailScreen() {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.calendarHint}>
-              Available days are normal. Unavailable days are translucent.
-            </Text>
-
             <View style={styles.weekRow}>
               {WEEK_DAYS.map((day) => (
                 <Text key={day} style={styles.weekDayText}>
@@ -508,8 +648,10 @@ export default function OfficeDetailScreen() {
                 }
 
                 const dateKey = makeDateKey(date);
-                const selected = selectedDates.includes(dateKey);
-                const available = isDateAvailable(date);
+                const inWindow = bookingWindowSet.has(dateKey);
+                const selected = selectedDate === dateKey;
+                const userBooking = userBookingsByDate.get(dateKey);
+                const bookedHere = userBooking?.location.id === locationId;
 
                 return (
                   <TouchableOpacity
@@ -518,42 +660,80 @@ export default function OfficeDetailScreen() {
                       styles.dayCell,
                       styles.dayButton,
                       selected && styles.daySelected,
-                      !available && styles.dayUnavailable,
+                      !inWindow && styles.dayUnavailable,
+                      userBooking && styles.dayUserBooked,
+                      bookedHere && styles.dayBookedHere,
                     ]}
-                    disabled={!available}
-                    onPress={() => toggleDate(date)}
+                    disabled={!inWindow}
+                    onPress={() => selectDate(date)}
                   >
                     <Text
                       style={[
                         styles.dayText,
                         selected && styles.dayTextSelected,
-                        !available && styles.dayTextUnavailable,
+                        !inWindow && styles.dayTextUnavailable,
+                        userBooking && !selected && styles.dayTextBooked,
                       ]}
                     >
                       {date.getDate()}
                     </Text>
+                    {userBooking && (
+                      <View
+                        style={[
+                          styles.bookedDot,
+                          bookedHere && styles.bookedDotHere,
+                        ]}
+                      />
+                    )}
                   </TouchableOpacity>
                 );
               })}
             </View>
 
-            {sortedSelectedDates.length > 0 && (
-              <View style={styles.selectedDaysBox}>
-                <Text style={styles.selectedDaysTitle}>Selected days:</Text>
-
-                {sortedSelectedDates.map((dateKey) => (
-                  <Text key={dateKey} style={styles.selectedDayText}>
-                    {makeDateLabel(dateKey)}
+            {selectedDate && (
+              <View style={styles.selectedDateBox}>
+                <Text style={styles.selectedDateLabel}>
+                  {formatBookingDateLabel(selectedDate)}
+                </Text>
+                {bookingsLoading || availabilityLoading ? (
+                  <ActivityIndicator size="small" color="#1E2A5E" />
+                ) : selectedUserBooking ? (
+                  <Text style={styles.availabilityMeta}>
+                    {selectedUserBooking.location.name}
                   </Text>
-                ))}
+                ) : availability ? (
+                  <Text style={styles.availabilityMeta}>
+                    {availability.booked_count} / {availability.capacity} booked
+                  </Text>
+                ) : null}
+              </View>
+            )}
+
+            {bannerText && (
+              <View
+                style={[
+                  styles.banner,
+                  (availability?.status === 'full' || selectedUserBooking) &&
+                    styles.bannerFull,
+                ]}
+              >
+                <Text style={styles.bannerText}>{bannerText}</Text>
               </View>
             )}
 
             <TouchableOpacity
-              style={styles.confirmBookingButton}
-              onPress={handleConfirmBooking}
+              style={[
+                styles.confirmBookingButton,
+                reserveDisabled && styles.confirmBookingButtonDisabled,
+              ]}
+              disabled={reserveDisabled}
+              onPress={() => void handleReserve()}
             >
-              <Text style={styles.confirmBookingText}>Confirm selection</Text>
+              {reserving ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.confirmBookingText}>Reserve</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -782,6 +962,14 @@ const styles = StyleSheet.create({
     fontFamily: 'serif',
   },
 
+  calendarHint: {
+    color: '#666',
+    fontSize: 13,
+    textAlign: 'center',
+    marginBottom: 12,
+    fontFamily: 'serif',
+  },
+
   monthHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -802,14 +990,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '800',
     color: '#1E2A5E',
-    fontFamily: 'serif',
-  },
-
-  calendarHint: {
-    color: '#666',
-    fontSize: 13,
-    textAlign: 'center',
-    marginBottom: 12,
     fontFamily: 'serif',
   },
 
@@ -851,6 +1031,14 @@ const styles = StyleSheet.create({
     opacity: 0.25,
   },
 
+  dayUserBooked: {
+    backgroundColor: 'rgba(46, 125, 50, 0.18)',
+  },
+
+  dayBookedHere: {
+    backgroundColor: 'rgba(46, 125, 50, 0.32)',
+  },
+
   dayText: {
     color: '#222',
     fontSize: 15,
@@ -865,26 +1053,66 @@ const styles = StyleSheet.create({
     color: '#777',
   },
 
-  selectedDaysBox: {
+  dayTextBooked: {
+    color: '#2e7d32',
+  },
+
+  bookedDot: {
+    position: 'absolute',
+    bottom: 4,
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: '#2e7d32',
+  },
+
+  bookedDotHere: {
+    backgroundColor: '#1b5e20',
+  },
+
+  selectedDateBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     backgroundColor: 'rgba(255,255,255,0.65)',
     borderRadius: 18,
     padding: 14,
     marginTop: 14,
   },
 
-  selectedDaysTitle: {
+  selectedDateLabel: {
     fontSize: 16,
     fontWeight: '800',
     color: '#222',
     fontFamily: 'serif',
-    marginBottom: 6,
+    flex: 1,
   },
 
-  selectedDayText: {
-    fontSize: 14,
-    color: '#444',
+  availabilityMeta: {
+    fontSize: 13,
+    color: '#555',
     fontWeight: '600',
-    marginBottom: 3,
+    maxWidth: '45%',
+    textAlign: 'right',
+  },
+
+  banner: {
+    backgroundColor: 'rgba(255, 193, 7, 0.25)',
+    borderRadius: 14,
+    padding: 12,
+    marginTop: 12,
+  },
+
+  bannerFull: {
+    backgroundColor: 'rgba(220, 53, 69, 0.18)',
+  },
+
+  bannerText: {
+    color: '#333',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    fontFamily: 'serif',
   },
 
   confirmBookingButton: {
@@ -894,6 +1122,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 14,
+  },
+
+  confirmBookingButtonDisabled: {
+    opacity: 0.45,
   },
 
   confirmBookingText: {

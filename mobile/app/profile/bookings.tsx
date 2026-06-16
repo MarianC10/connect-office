@@ -1,7 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   Image,
   ImageBackground,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -11,63 +14,82 @@ import {
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 
-type BookingItem = {
-  id: string;
-  officeName: string;
-  description: string;
-  rentedDate: string;
-  rating: number;
-  imageUrl: string;
-  isFavorite: boolean;
-};
+import {
+  Booking,
+  cancelBooking,
+  formatBookingDateLabel,
+  listBookings,
+} from '@/lib/bookings';
 
 export default function AllBookingsScreen() {
   const router = useRouter();
 
-  /**
-   * Leave this empty for now until you have real bookings from the backend.
-   */
-  const [bookings] = useState<BookingItem[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
 
-  /**
-   * TESTING DATA WHEN BOOKINGS EXIST
-   *
-   * To test the design, comment the empty state above and uncomment this:
-   *
-   * const [bookings] = useState<BookingItem[]>([
-   *   {
-   *     id: '1',
-   *     officeName: 'Office1',
-   *     description: 'short description',
-   *     rentedDate: '12 June 2026',
-   *     rating: 4.5,
-   *     imageUrl: 'https://images.unsplash.com/photo-1497366811353-6870744d04b2',
-   *     isFavorite: false,
-   *   },
-   *   {
-   *     id: '2',
-   *     officeName: 'Office1',
-   *     description: 'short description',
-   *     rentedDate: '15 June 2026',
-   *     rating: 4.5,
-   *     imageUrl: 'https://images.unsplash.com/photo-1497366754035-f200968a6e72',
-   *     isFavorite: false,
-   *   },
-   *   {
-   *     id: '3',
-   *     officeName: 'Office1',
-   *     description: 'short description',
-   *     rentedDate: '21 June 2026',
-   *     rating: 4.5,
-   *     imageUrl: 'https://images.unsplash.com/photo-1497366216548-37526070297c',
-   *     isFavorite: false,
-   *   },
-   * ]);
-   */
+  const loadBookings = useCallback(async (isRefresh = false) => {
+    if (isRefresh) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
 
-  const sortedBookings = useMemo(() => {
-    return [...bookings];
-  }, [bookings]);
+    try {
+      const items = await listBookings();
+      setBookings(items);
+    } catch (err) {
+      Alert.alert(
+        'Error',
+        err instanceof Error ? err.message : 'Could not load bookings.'
+      );
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadBookings();
+  }, [loadBookings]);
+
+  const openOffice = (locationId: string) => {
+    router.push({
+      pathname: '/office/[id]',
+      params: { id: locationId },
+    });
+  };
+
+  const handleCancel = (booking: Booking) => {
+    Alert.alert(
+      'Cancel booking',
+      `Cancel your booking at ${booking.location.name} on ${formatBookingDateLabel(booking.booking_date)}?`,
+      [
+        { text: 'Keep', style: 'cancel' },
+        {
+          text: 'Cancel booking',
+          style: 'destructive',
+          onPress: async () => {
+            setCancellingId(booking.id);
+            try {
+              await cancelBooking(booking.id);
+              setBookings((current) =>
+                current.filter((item) => item.id !== booking.id)
+              );
+            } catch (err) {
+              Alert.alert(
+                'Error',
+                err instanceof Error ? err.message : 'Could not cancel booking.'
+              );
+            } finally {
+              setCancellingId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
 
   return (
     <ImageBackground
@@ -77,7 +99,6 @@ export default function AllBookingsScreen() {
     >
       <View style={styles.overlay}>
         <View style={styles.screen}>
-          {/* Header */}
           <TouchableOpacity
             activeOpacity={0.85}
             style={styles.headerCard}
@@ -89,13 +110,15 @@ export default function AllBookingsScreen() {
               color="#2f2f2f"
               style={styles.headerIcon}
             />
-
             <Text style={styles.headerTitle}>All Bookings</Text>
           </TouchableOpacity>
 
-          {/* Main content */}
           <View style={styles.contentCard}>
-            {sortedBookings.length === 0 ? (
+            {loading ? (
+              <View style={styles.emptyContainer}>
+                <ActivityIndicator size="large" color="#1E2A5E" />
+              </View>
+            ) : bookings.length === 0 ? (
               <View style={styles.emptyContainer}>
                 <Text style={styles.emptyText}>No bookings yet</Text>
               </View>
@@ -103,57 +126,77 @@ export default function AllBookingsScreen() {
               <ScrollView
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.bookingsList}
+                refreshControl={
+                  <RefreshControl
+                    refreshing={refreshing}
+                    onRefresh={() => void loadBookings(true)}
+                  />
+                }
               >
-                {sortedBookings.map((booking) => (
-                  <TouchableOpacity
-                    key={booking.id}
-                    style={styles.bookingCard}
-                    activeOpacity={0.8}
-                  >
-                    <Image
-                      source={{ uri: booking.imageUrl }}
-                      style={styles.bookingImage}
-                      resizeMode="cover"
-                    />
+                {bookings.map((booking) => {
+                  const imageUrl = booking.location.image_url;
+                  const isCancelling = cancellingId === booking.id;
 
-                    <View style={styles.bookingInfo}>
-                      <View style={styles.bookingTopRow}>
-                        <View style={styles.titleBlock}>
-                          <Text style={styles.officeName} numberOfLines={1}>
-                            {booking.officeName}
-                          </Text>
+                  return (
+                    <TouchableOpacity
+                      key={booking.id}
+                      style={styles.bookingCard}
+                      activeOpacity={0.8}
+                      onPress={() => openOffice(booking.location.id)}
+                    >
+                      {imageUrl ? (
+                        <Image
+                          source={{ uri: imageUrl }}
+                          style={styles.bookingImage}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={[styles.bookingImage, styles.imagePlaceholder]}>
+                          <Feather name="briefcase" size={28} color="#888" />
+                        </View>
+                      )}
 
-                          <Text style={styles.description} numberOfLines={1}>
-                            {booking.description}
-                          </Text>
+                      <View style={styles.bookingInfo}>
+                        <View style={styles.bookingTopRow}>
+                          <View style={styles.titleBlock}>
+                            <Text style={styles.officeName} numberOfLines={1}>
+                              {booking.location.name}
+                            </Text>
+                            <Text style={styles.description} numberOfLines={1}>
+                              {booking.location.city}
+                            </Text>
+                          </View>
                         </View>
 
-                        <TouchableOpacity activeOpacity={0.7}>
-                          <Ionicons
-                            name={
-                              booking.isFavorite ? 'heart' : 'heart-outline'
-                            }
-                            size={25}
-                            color="#4a4a4a"
-                          />
-                        </TouchableOpacity>
-                      </View>
-
-                      <View style={styles.bookingBottomRow}>
-                        <Text style={styles.dateText} numberOfLines={1}>
-                          Date: {booking.rentedDate}
-                        </Text>
-
-                        <View style={styles.ratingWrap}>
-                          <Ionicons name="star" size={14} color="#ffffff" />
-                          <Text style={styles.ratingText}>
-                            {booking.rating.toFixed(1)}
+                        <View style={styles.bookingBottomRow}>
+                          <Text style={styles.dateText} numberOfLines={2}>
+                            {formatBookingDateLabel(booking.booking_date)}
                           </Text>
+
+                          <TouchableOpacity
+                            activeOpacity={0.7}
+                            style={styles.cancelButton}
+                            disabled={isCancelling}
+                            onPress={() => handleCancel(booking)}
+                          >
+                            {isCancelling ? (
+                              <ActivityIndicator size="small" color="#1E2A5E" />
+                            ) : (
+                              <>
+                                <Ionicons
+                                  name="close-circle-outline"
+                                  size={16}
+                                  color="#1E2A5E"
+                                />
+                                <Text style={styles.cancelText}>Cancel</Text>
+                              </>
+                            )}
+                          </TouchableOpacity>
                         </View>
                       </View>
-                    </View>
-                  </TouchableOpacity>
-                ))}
+                    </TouchableOpacity>
+                  );
+                })}
               </ScrollView>
             )}
           </View>
@@ -236,6 +279,12 @@ const styles = StyleSheet.create({
     height: 102,
     borderRadius: 10,
     backgroundColor: '#cfcfcf',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  imagePlaceholder: {
+    backgroundColor: '#d8d8d8',
   },
 
   bookingInfo: {
@@ -263,9 +312,9 @@ const styles = StyleSheet.create({
 
   description: {
     fontSize: 14,
-    color: '#ffffff',
-    fontWeight: '700',
-    marginTop: -2,
+    color: '#555',
+    fontWeight: '600',
+    marginTop: 2,
     fontFamily: 'serif',
   },
 
@@ -284,16 +333,18 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
 
-  ratingWrap: {
+  cancelButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
 
-  ratingText: {
+  cancelText: {
     fontSize: 13,
-    color: '#222',
+    color: '#1E2A5E',
     fontWeight: '700',
-    marginLeft: 5,
   },
 
   emptyContainer: {

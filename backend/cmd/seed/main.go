@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -46,8 +47,31 @@ type seedLocation struct {
 }
 
 type seedLocationImage struct {
-	ID  string `json:"id"`
-	URL string `json:"url"`
+	ID   string `json:"id"`
+	Path string `json:"-"`
+}
+
+func staticFilesBaseURL() string {
+	if v := strings.TrimSpace(os.Getenv("STATIC_FILES_BASE_URL")); v != "" {
+		return strings.TrimRight(v, "/")
+	}
+	return "http://localhost:8082"
+}
+
+func (img seedLocationImage) url(base string) string {
+	return base + img.Path
+}
+
+func marshalLocationImages(images []seedLocationImage, base string) ([]byte, error) {
+	type imageJSON struct {
+		ID  string `json:"id"`
+		URL string `json:"url"`
+	}
+	out := make([]imageJSON, len(images))
+	for i, img := range images {
+		out[i] = imageJSON{ID: img.ID, URL: img.url(base)}
+	}
+	return json.Marshal(out)
 }
 
 type seedAmenity struct {
@@ -69,8 +93,8 @@ var locationsSeed = []seedLocation{
 		Longitude:   23.5969,
 		Capacity:    40,
 		Images: []seedLocationImage{
-			{ID: "cluj-lobby", URL: "http://localhost:8082/locations/cluj/lobby.jpg"},
-			{ID: "cluj-open-space", URL: "http://localhost:8082/locations/cluj/open-space.jpg"},
+			{ID: "cluj-lobby", Path: "/locations/cluj/lobby.jpg"},
+			{ID: "cluj-open-space", Path: "/locations/cluj/open-space.jpg"},
 		},
 	},
 	{
@@ -85,8 +109,8 @@ var locationsSeed = []seedLocation{
 		Longitude:   26.0840,
 		Capacity:    60,
 		Images: []seedLocationImage{
-			{ID: "bucharest-exterior", URL: "http://localhost:8082/locations/bucharest/exterior.jpg"},
-			{ID: "bucharest-meeting-room", URL: "http://localhost:8082/locations/bucharest/meeting-room.jpg"},
+			{ID: "bucharest-exterior", Path: "/locations/bucharest/exterior.jpg"},
+			{ID: "bucharest-meeting-room", Path: "/locations/bucharest/meeting-room.jpg"},
 		},
 	},
 	{
@@ -101,8 +125,8 @@ var locationsSeed = []seedLocation{
 		Longitude:   21.2087,
 		Capacity:    30,
 		Images: []seedLocationImage{
-			{ID: "timisoara-common-area", URL: "http://localhost:8082/locations/timisoara/common-area.jpg"},
-			{ID: "timisoara-focus-zone", URL: "http://localhost:8082/locations/timisoara/focus-zone.jpg"},
+			{ID: "timisoara-common-area", Path: "/locations/timisoara/common-area.jpg"},
+			{ID: "timisoara-focus-zone", Path: "/locations/timisoara/focus-zone.jpg"},
 		},
 	},
 }
@@ -202,6 +226,9 @@ func main() {
 		log.Fatalf("db ping: %v", err)
 	}
 
+	staticBase := staticFilesBaseURL()
+	log.Printf("using STATIC_FILES_BASE_URL=%s", staticBase)
+
 	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		log.Fatalf("begin tx: %v", err)
@@ -213,7 +240,7 @@ func main() {
 	}
 
 	for _, loc := range locationsSeed {
-		imagesJSON, err := json.Marshal(loc.Images)
+		imagesJSON, err := marshalLocationImages(loc.Images, staticBase)
 		if err != nil {
 			log.Fatalf("marshal images for %s: %v", loc.Name, err)
 		}

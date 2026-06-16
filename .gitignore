@@ -104,3 +104,5 @@ logs/
 # Misc
 .expo/
 .expo-shared/assets.json
+
+.docs/
