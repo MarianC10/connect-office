@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -18,6 +19,9 @@ var (
 	locCluj  = uuid.MustParse("a0000001-0000-4000-8000-000000000001")
 	locBuch  = uuid.MustParse("a0000002-0000-4000-8000-000000000002")
 	locTimis = uuid.MustParse("a0000003-0000-4000-8000-000000000003")
+
+	testUserID    = uuid.MustParse("c0000001-0000-4000-8000-000000000001")
+	testUserEmail = "seed-test@connectoffice.local"
 
 	amHotDesks   = uuid.MustParse("b0000001-0000-4000-8000-000000000001")
 	amMeeting    = uuid.MustParse("b0000002-0000-4000-8000-000000000002")
@@ -72,6 +76,46 @@ func marshalLocationImages(images []seedLocationImage, base string) ([]byte, err
 		out[i] = imageJSON{ID: img.ID, URL: img.url(base)}
 	}
 	return json.Marshal(out)
+}
+
+func tomorrowInBucharest() time.Time {
+	loc, err := time.LoadLocation("Europe/Bucharest")
+	if err != nil {
+		log.Fatalf("load Europe/Bucharest: %v", err)
+	}
+	now := time.Now().In(loc)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	return today.AddDate(0, 0, 1)
+}
+
+func seedTestUserBooking(ctx context.Context, tx pgx.Tx) (time.Time, error) {
+	bookingDate := tomorrowInBucharest()
+
+	_, err := tx.Exec(ctx, `
+INSERT INTO users (id, email, email_verified)
+VALUES ($1, $2, true)
+ON CONFLICT (id) DO UPDATE SET
+	email = EXCLUDED.email,
+	email_verified = EXCLUDED.email_verified,
+	updated_at = now()`,
+		testUserID, testUserEmail)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("upsert test user: %w", err)
+	}
+
+	_, err = tx.Exec(ctx, `
+INSERT INTO bookings (user_id, location_id, booking_date, status)
+VALUES ($1, $2, $3::date, 'confirmed')
+ON CONFLICT (user_id, booking_date) DO UPDATE SET
+	location_id = EXCLUDED.location_id,
+	status = 'confirmed',
+	updated_at = now()`,
+		testUserID, locCluj, bookingDate)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("upsert test booking: %w", err)
+	}
+
+	return bookingDate, nil
 }
 
 type seedAmenity struct {
@@ -293,9 +337,15 @@ ON CONFLICT (plan_type) DO UPDATE SET
 		}
 	}
 
+	bookingDate, err := seedTestUserBooking(ctx, tx)
+	if err != nil {
+		log.Fatalf("seed test user booking: %v", err)
+	}
+
 	if err := tx.Commit(ctx); err != nil {
 		log.Fatalf("commit: %v", err)
 	}
 
 	fmt.Println("seed completed:", len(locationsSeed), "locations,", len(amenitiesSeed), "amenities,", len(locationAmenitiesSeed), "links,", len(subscriptionPlansSeed), "subscription plans")
+	fmt.Printf("test user: %s (%s) booked at Cluj on %s\n", testUserEmail, testUserID, bookingDate.Format("2006-01-02"))
 }
