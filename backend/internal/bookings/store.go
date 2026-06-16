@@ -17,6 +17,7 @@ type Store interface {
 	Cancel(ctx context.Context, id uuid.UUID) error
 	CountConfirmedByLocationDate(ctx context.Context, locationID uuid.UUID, date time.Time) (int, error)
 	HasConfirmedForUserOnDate(ctx context.Context, userID uuid.UUID, date time.Time) (bool, error)
+	HasConfirmedAtLocationOnDate(ctx context.Context, userID, locationID uuid.UUID, date time.Time) (bool, error)
 }
 
 type PostgresStore struct {
@@ -92,6 +93,19 @@ func (s *PostgresStore) HasConfirmedForUserOnDate(ctx context.Context, userID uu
 		Count(&count).Error
 	if err != nil {
 		return false, fmt.Errorf("check user booking: %w", err)
+	}
+	return count > 0, nil
+}
+
+func (s *PostgresStore) HasConfirmedAtLocationOnDate(ctx context.Context, userID, locationID uuid.UUID, date time.Time) (bool, error) {
+	var count int64
+	err := s.db.WithContext(ctx).
+		Model(&Booking{}).
+		Where("user_id = ? AND location_id = ? AND booking_date = ? AND status = ?",
+			userID, locationID, date, BookingStatusConfirmed).
+		Count(&count).Error
+	if err != nil {
+		return false, fmt.Errorf("check user booking at location: %w", err)
 	}
 	return count > 0, nil
 }

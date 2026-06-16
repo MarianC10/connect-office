@@ -1,0 +1,81 @@
+import { authFetch } from "@/lib/api";
+
+export type FriendRequest = {
+  id: string;
+  from_user_id: string;
+  display_name: string;
+  avatar_url: string;
+  created_at: string;
+};
+
+export type Friend = {
+  id: string;
+  display_name: string;
+  is_public: boolean;
+  avatar_url: string;
+};
+
+export class FriendRequestConflictError extends Error {
+  constructor(message = "Friend request already pending or already friends") {
+    super(message);
+    this.name = "FriendRequestConflictError";
+  }
+}
+
+export async function sendFriendRequest(body: {
+  user_id?: string;
+  email?: string;
+}): Promise<FriendRequest> {
+  const res = await authFetch("/friends/requests", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 409) {
+    const text = await res.text();
+    throw new FriendRequestConflictError(text || undefined);
+  }
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function fetchInbox(): Promise<FriendRequest[]> {
+  const res = await authFetch("/friends/requests/inbox");
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function acceptRequest(requestId: string): Promise<void> {
+  const res = await authFetch(`/friends/requests/${encodeURIComponent(requestId)}/accept`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+}
+
+export async function declineRequest(requestId: string): Promise<void> {
+  const res = await authFetch(`/friends/requests/${encodeURIComponent(requestId)}/decline`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+}
+
+export async function listFriends(): Promise<Friend[]> {
+  const res = await authFetch("/friends");
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  return res.json();
+}

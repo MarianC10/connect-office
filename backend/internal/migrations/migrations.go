@@ -211,6 +211,88 @@ var All = []Migration{
 			`).Error
 		},
 	},
+	{
+		ID:          "0009_user_profiles",
+		Description: "Add display_name, is_public, and avatar_url to users",
+		Up: func(ctx context.Context, tx *gorm.DB) error {
+			statements := []string{
+				`ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT`,
+				`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_public BOOLEAN NOT NULL DEFAULT false`,
+				`ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT`,
+				`UPDATE users SET display_name = COALESCE(
+					NULLIF(TRIM(display_name), ''),
+					NULLIF(TRIM(SPLIT_PART(COALESCE(email, ''), '@', 1)), ''),
+					'User'
+				) WHERE display_name IS NULL OR TRIM(display_name) = ''`,
+				`ALTER TABLE users ALTER COLUMN display_name SET NOT NULL`,
+			}
+			for _, stmt := range statements {
+				if err := tx.WithContext(ctx).Exec(stmt).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		ID:          "0010_friends",
+		Description: "Create friend_requests and friendships tables",
+		Up: func(ctx context.Context, tx *gorm.DB) error {
+			statements := []string{
+				`CREATE TABLE IF NOT EXISTS friend_requests (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					from_user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+					to_user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+					status TEXT NOT NULL DEFAULT 'pending'
+						CHECK (status IN ('pending', 'accepted', 'declined')),
+					created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+					updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+					CHECK (from_user_id <> to_user_id)
+				)`,
+				`CREATE UNIQUE INDEX IF NOT EXISTS friend_requests_pending_pair_idx
+					ON friend_requests (from_user_id, to_user_id) WHERE status = 'pending'`,
+				`CREATE INDEX IF NOT EXISTS friend_requests_inbox_idx
+					ON friend_requests (to_user_id) WHERE status = 'pending'`,
+				`CREATE TABLE IF NOT EXISTS friendships (
+					user_a_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+					user_b_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+					created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+					PRIMARY KEY (user_a_id, user_b_id),
+					CHECK (user_a_id < user_b_id)
+				)`,
+			}
+			for _, stmt := range statements {
+				if err := tx.WithContext(ctx).Exec(stmt).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		ID:          "0011_check_ins",
+		Description: "Create check_ins table for office presence",
+		Up: func(ctx context.Context, tx *gorm.DB) error {
+			statements := []string{
+				`CREATE TABLE IF NOT EXISTS check_ins (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+					location_id UUID NOT NULL REFERENCES locations (id) ON DELETE CASCADE,
+					check_in_date DATE NOT NULL,
+					checked_in_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+					UNIQUE (user_id, location_id, check_in_date)
+				)`,
+				`CREATE INDEX IF NOT EXISTS check_ins_location_date_idx
+					ON check_ins (location_id, check_in_date)`,
+			}
+			for _, stmt := range statements {
+				if err := tx.WithContext(ctx).Exec(stmt).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
 }
 
 func Run(ctx context.Context, db *gorm.DB) error {

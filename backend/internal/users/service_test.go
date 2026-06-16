@@ -30,6 +30,26 @@ func (f *fakeStore) SetStripeCustomerID(ctx context.Context, userID uuid.UUID, c
 	return nil
 }
 
+func (f *fakeStore) UpdateProfile(ctx context.Context, userID uuid.UUID, displayName *string, isPublic *bool) (User, error) {
+	return f.u, nil
+}
+
+func (f *fakeStore) SetAvatarURL(ctx context.Context, userID uuid.UUID, avatarURL string) (User, error) {
+	return f.u, nil
+}
+
+func (f *fakeStore) SearchPublicByDisplayName(ctx context.Context, query string, limit int) ([]User, error) {
+	return nil, nil
+}
+
+func (f *fakeStore) GetByEmail(ctx context.Context, email string) (User, error) {
+	return User{}, ErrUserNotFound
+}
+
+func (f *fakeStore) GetByID(ctx context.Context, userID uuid.UUID) (User, error) {
+	return f.u, nil
+}
+
 func TestService_Me_mapsUser(t *testing.T) {
 	uid := uuid.MustParse("33333333-3333-3333-3333-333333333333")
 	email := "c@example.com"
@@ -38,9 +58,10 @@ func TestService_Me_mapsUser(t *testing.T) {
 			ID:            uid,
 			Email:         &email,
 			EmailVerified: true,
+			DisplayName:   "c",
 		},
 	}
-	svc := NewService(fs)
+	svc := NewService(fs, LoadConfigFromEnv())
 	p := auth.Principal{UserID: uid, Email: "c@example.com", EmailVerified: true}
 	me, err := svc.Me(context.Background(), p)
 	if err != nil {

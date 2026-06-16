@@ -72,6 +72,10 @@ func (f *fakeBookingStore) HasConfirmedForUserOnDate(ctx context.Context, userID
 	return f.hasUserOnDate, nil
 }
 
+func (f *fakeBookingStore) HasConfirmedAtLocationOnDate(ctx context.Context, userID, locationID uuid.UUID, date time.Time) (bool, error) {
+	return f.hasUserOnDate, nil
+}
+
 type fakeLocationReader struct {
 	loc locations.LocationResponse
 	err error

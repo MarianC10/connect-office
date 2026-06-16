@@ -22,6 +22,7 @@ var (
 
 	testUserID    = uuid.MustParse("c0000001-0000-4000-8000-000000000001")
 	testUserEmail = "seed-test@connectoffice.local"
+	testUserName  = "Seed Test"
 
 	amHotDesks   = uuid.MustParse("b0000001-0000-4000-8000-000000000001")
 	amMeeting    = uuid.MustParse("b0000002-0000-4000-8000-000000000002")
@@ -78,27 +79,29 @@ func marshalLocationImages(images []seedLocationImage, base string) ([]byte, err
 	return json.Marshal(out)
 }
 
-func tomorrowInBucharest() time.Time {
+func todayInBucharest() time.Time {
 	loc, err := time.LoadLocation("Europe/Bucharest")
 	if err != nil {
 		log.Fatalf("load Europe/Bucharest: %v", err)
 	}
 	now := time.Now().In(loc)
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
-	return today.AddDate(0, 0, 1)
+	return today
 }
 
 func seedTestUserBooking(ctx context.Context, tx pgx.Tx) (time.Time, error) {
-	bookingDate := tomorrowInBucharest()
+	bookingDate := todayInBucharest()
 
 	_, err := tx.Exec(ctx, `
-INSERT INTO users (id, email, email_verified)
-VALUES ($1, $2, true)
+INSERT INTO users (id, email, email_verified, display_name, is_public)
+VALUES ($1, $2, true, $3, true)
 ON CONFLICT (id) DO UPDATE SET
 	email = EXCLUDED.email,
 	email_verified = EXCLUDED.email_verified,
+	display_name = EXCLUDED.display_name,
+	is_public = EXCLUDED.is_public,
 	updated_at = now()`,
-		testUserID, testUserEmail)
+		testUserID, testUserEmail, testUserName)
 	if err != nil {
 		return time.Time{}, fmt.Errorf("upsert test user: %w", err)
 	}
@@ -347,5 +350,5 @@ ON CONFLICT (plan_type) DO UPDATE SET
 	}
 
 	fmt.Println("seed completed:", len(locationsSeed), "locations,", len(amenitiesSeed), "amenities,", len(locationAmenitiesSeed), "links,", len(subscriptionPlansSeed), "subscription plans")
-	fmt.Printf("test user: %s (%s) booked at Cluj on %s\n", testUserEmail, testUserID, bookingDate.Format("2006-01-02"))
+	fmt.Printf("test user: %s (%s, public) booked at Cluj on %s\n", testUserEmail, testUserID, bookingDate.Format("2006-01-02"))
 }

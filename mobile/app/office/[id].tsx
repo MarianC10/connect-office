@@ -28,6 +28,18 @@ import {
   LocationAvailability,
   todayInBucharest,
 } from '@/lib/bookings';
+import { UserAvatar } from '@/components/user-avatar';
+import {
+  fetchMe,
+  fetchVisibleBookings,
+  VisibleBookingPerson,
+} from '@/lib/profile';
+import {
+  checkInAtOffice,
+  fetchVisibleCheckIns,
+  VisibleCheckInPerson,
+} from '@/lib/checkins';
+import { SOCIAL_ENABLED } from '@/lib/social-config';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -83,6 +95,42 @@ function makeDateKey(date: Date) {
 function parseDateKey(dateKey: string): Date {
   const [year, month, day] = dateKey.split('-').map(Number);
   return new Date(year, month - 1, day);
+}
+
+type OfficePerson = VisibleBookingPerson | VisibleCheckInPerson;
+
+function PersonList({
+  people,
+  emptyMessage,
+  onPressPerson,
+}: {
+  people: OfficePerson[];
+  emptyMessage: string;
+  onPressPerson: (userId: string) => void;
+}) {
+  if (people.length === 0) {
+    return <Text style={styles.peopleEmpty}>{emptyMessage}</Text>;
+  }
+
+  return (
+    <>
+      {people.map((person) => (
+        <TouchableOpacity
+          key={person.user_id}
+          style={styles.personRow}
+          onPress={() => onPressPerson(person.user_id)}
+        >
+          <UserAvatar uri={person.avatar_url} size={40} />
+          <View style={styles.personText}>
+            <Text style={styles.personName}>{person.display_name}</Text>
+            <Text style={styles.personMeta}>
+              {person.is_friend ? 'Friend' : 'Public profile'}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      ))}
+    </>
+  );
 }
 
 function getAmenityIcon(name: string) {
@@ -173,6 +221,15 @@ export default function OfficeDetailScreen() {
   );
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const [reserving, setReserving] = useState(false);
+  const [bookedPeople, setBookedPeople] = useState<VisibleBookingPerson[]>([]);
+  const [checkedInPeople, setCheckedInPeople] = useState<VisibleCheckInPerson[]>([]);
+  const [peopleLoading, setPeopleLoading] = useState(false);
+  const [checkingIn, setCheckingIn] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [officeUserBookings, setOfficeUserBookings] = useState<Map<string, Booking>>(
+    new Map()
+  );
+  const [peopleDate, setPeopleDate] = useState(() => todayInBucharest());
 
   useEffect(() => {
     let cancelled = false;
@@ -211,6 +268,97 @@ export default function OfficeDetailScreen() {
       cancelled = true;
     };
   }, [locationId]);
+
+  useEffect(() => {
+    if (!SOCIAL_ENABLED || !locationId) {
+      setBookedPeople([]);
+      setCheckedInPeople([]);
+      return;
+    }
+
+    let cancelled = false;
+    setPeopleLoading(true);
+
+    const loadPeople = async () => {
+      setPeopleLoading(true);
+
+      const bookedPromise = fetchVisibleBookings(locationId, peopleDate)
+        .then((booked) => {
+          if (!cancelled) {
+            setBookedPeople(booked);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setBookedPeople([]);
+          }
+        });
+
+      const checkedInPromise = fetchVisibleCheckIns(locationId, peopleDate)
+        .then((checkedIn) => {
+          if (!cancelled) {
+            setCheckedInPeople(checkedIn);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setCheckedInPeople([]);
+          }
+        });
+
+      await Promise.all([bookedPromise, checkedInPromise]);
+
+      if (!cancelled) {
+        setPeopleLoading(false);
+      }
+    };
+
+    void loadPeople();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [locationId, peopleDate]);
+
+  useEffect(() => {
+    if (!SOCIAL_ENABLED) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadSocialContext = async () => {
+      try {
+        const [me, bookings] = await Promise.all([fetchMe(), listBookings()]);
+        if (cancelled) return;
+
+        setCurrentUserId(me.id);
+
+        const byDate = new Map<string, Booking>();
+        for (const booking of bookings) {
+          byDate.set(booking.booking_date, booking);
+        }
+        setOfficeUserBookings(byDate);
+      } catch {
+        if (!cancelled) {
+          setOfficeUserBookings(new Map());
+        }
+      }
+    };
+
+    void loadSocialContext();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [locationId]);
+
+  useEffect(() => {
+    if (!bookingVisible || !selectedDate) {
+      return;
+    }
+    setPeopleDate(selectedDate);
+  }, [bookingVisible, selectedDate]);
 
   useEffect(() => {
     if (!bookingVisible) {
@@ -350,6 +498,11 @@ export default function OfficeDetailScreen() {
     }
   };
 
+  const closeBookingModal = () => {
+    setBookingVisible(false);
+    setPeopleDate(todayInBucharest());
+  };
+
   const openBookingModal = () => {
     const todayKey = todayInBucharest();
     setCalendarMonth(parseDateKey(todayKey));
@@ -412,7 +565,7 @@ export default function OfficeDetailScreen() {
         [
           {
             text: 'OK',
-            onPress: () => setBookingVisible(false),
+            onPress: () => closeBookingModal(),
           },
         ]
       );
@@ -455,6 +608,44 @@ export default function OfficeDetailScreen() {
     availabilityLoading ||
     !!selectedUserBooking ||
     availability?.status === 'full';
+
+  const isToday = peopleDate === todayInBucharest();
+  const userBookingOnDate = officeUserBookings.get(peopleDate);
+  const userBookedHere =
+    userBookingOnDate?.location.id === locationId &&
+    userBookingOnDate?.status === 'confirmed';
+  const userCheckedIn =
+    currentUserId != null &&
+    checkedInPeople.some((person) => person.user_id === currentUserId);
+  const showCheckInButton =
+    SOCIAL_ENABLED && isToday && userBookedHere && !userCheckedIn;
+
+  const openUserProfile = (userId: string) => {
+    router.push({
+      pathname: '/users/[id]',
+      params: { id: userId },
+    } as never);
+  };
+
+  const handleCheckIn = async () => {
+    if (!locationId || !isToday) {
+      return;
+    }
+
+    setCheckingIn(true);
+    try {
+      await checkInAtOffice(locationId, peopleDate);
+      const checkedIn = await fetchVisibleCheckIns(locationId, peopleDate);
+      setCheckedInPeople(checkedIn);
+    } catch (err) {
+      Alert.alert(
+        'Check-in failed',
+        err instanceof Error ? err.message : 'Could not check in.'
+      );
+    } finally {
+      setCheckingIn(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -578,6 +769,62 @@ export default function OfficeDetailScreen() {
 
             <Text style={styles.descriptionText}>{office.description}</Text>
 
+            {SOCIAL_ENABLED && (
+              <View style={styles.peopleSection}>
+                <Text style={styles.peopleTitle}>
+                  Booked · {formatBookingDateLabel(peopleDate)}
+                </Text>
+                <Text style={styles.peopleSubtitle}>
+                  People with a reservation for this day
+                </Text>
+                {peopleLoading ? (
+                  <ActivityIndicator color="#1E2A5E" style={styles.peopleLoader} />
+                ) : (
+                  <PersonList
+                    people={bookedPeople}
+                    emptyMessage="No friends or public bookers for this day yet."
+                    onPressPerson={openUserProfile}
+                  />
+                )}
+
+                <View style={styles.peopleDivider} />
+
+                <Text style={styles.peopleTitle}>People here</Text>
+                <Text style={styles.peopleSubtitle}>
+                  {isToday
+                    ? 'Checked in at this office today'
+                    : 'Check-ins are only shown for today'}
+                </Text>
+                {peopleLoading ? (
+                  <ActivityIndicator color="#1E2A5E" style={styles.peopleLoader} />
+                ) : (
+                  <PersonList
+                    people={isToday ? checkedInPeople : []}
+                    emptyMessage={
+                      isToday
+                        ? 'Nobody has checked in yet.'
+                        : 'Select today to see who is here.'
+                    }
+                    onPressPerson={openUserProfile}
+                  />
+                )}
+
+                {showCheckInButton && (
+                  <TouchableOpacity
+                    style={styles.checkInButton}
+                    disabled={checkingIn}
+                    onPress={() => void handleCheckIn()}
+                  >
+                    {checkingIn ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.checkInButtonText}>Check in</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+
             <View style={styles.bookingBar}>
               <TouchableOpacity
                 activeOpacity={0.8}
@@ -595,14 +842,14 @@ export default function OfficeDetailScreen() {
         visible={bookingVisible}
         animationType="slide"
         transparent
-        onRequestClose={() => setBookingVisible(false)}
+        onRequestClose={closeBookingModal}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.bookingModal}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select booking day</Text>
 
-              <TouchableOpacity onPress={() => setBookingVisible(false)}>
+              <TouchableOpacity onPress={closeBookingModal}>
                 <Ionicons name="close" size={26} color="#222" />
               </TouchableOpacity>
             </View>
@@ -1133,5 +1380,83 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '800',
     fontFamily: 'serif',
+  },
+
+  peopleSection: {
+    marginTop: 18,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(30, 42, 94, 0.06)',
+  },
+
+  peopleTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E2A5E',
+    marginBottom: 4,
+    fontFamily: 'serif',
+  },
+
+  peopleSubtitle: {
+    fontSize: 13,
+    color: '#666',
+    marginBottom: 8,
+    fontFamily: 'serif',
+  },
+
+  peopleDivider: {
+    height: 1,
+    backgroundColor: 'rgba(30, 42, 94, 0.12)',
+    marginVertical: 14,
+  },
+
+  checkInButton: {
+    marginTop: 12,
+    backgroundColor: '#1E2A5E',
+    borderRadius: 18,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+
+  checkInButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+    fontFamily: 'serif',
+  },
+
+  peopleLoader: {
+    marginVertical: 8,
+  },
+
+  peopleEmpty: {
+    color: '#666',
+    fontSize: 14,
+    fontFamily: 'serif',
+  },
+
+  personRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+  },
+
+  personText: {
+    flex: 1,
+  },
+
+  personName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#222',
+    fontFamily: 'serif',
+  },
+
+  personMeta: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 1,
   },
 });

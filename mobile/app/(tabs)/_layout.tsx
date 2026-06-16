@@ -8,6 +8,7 @@ import { HapticTab } from '@/components/haptic-tab';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { SOCIAL_ENABLED } from '@/lib/social-config';
 
 function TabBarBackground() {
   return <BlurView intensity={70} tint="light" style={StyleSheet.absoluteFill} />;
@@ -67,6 +68,24 @@ export default function TabLayout() {
           ),
         }}
       />
+
+      {SOCIAL_ENABLED && (
+        <Tabs.Screen
+          name="people"
+          options={{
+            title: 'People',
+            tabBarIcon: ({ color, focused }) => (
+              <View style={focused ? styles.iconActive : undefined}>
+                <IconSymbol size={24} name="person.2.fill" color={color} />
+              </View>
+            ),
+          }}
+        />
+      )}
+
+      {!SOCIAL_ENABLED && (
+        <Tabs.Screen name="people" options={{ href: null }} />
+      )}
 
       {/* ── Profile ── */}
       <Tabs.Screen
