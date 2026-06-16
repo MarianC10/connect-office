@@ -361,7 +361,7 @@ Gate People tab and social screens when false.
 - Add **Public profile** toggle
 - Save `display_name` + `is_public` via `PATCH /me`
 - **Profile picture:** pick from gallery/camera (`expo-image-picker`), upload via `POST /me/avatar`; show default when no custom image
-- Keep Supabase email update as today
+- Email is read-only on edit profile (account identifier; not changeable in app)
 - Supabase `preferred_username` mirrored on save; fallback on load when backend name is auto-generated
 
 #### Office page

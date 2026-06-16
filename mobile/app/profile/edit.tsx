@@ -19,7 +19,6 @@ import { useRouter } from 'expo-router';
 
 import { UserAvatar } from '@/components/user-avatar';
 import {
-  isLikelyAutoDisplayName,
   resolveDisplayName,
   syncDisplayNameToSupabase,
 } from '@/lib/display-name';
@@ -32,17 +31,12 @@ export default function EditProfileScreen() {
 
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
-  const [originalEmail, setOriginalEmail] = useState('');
   const [isPublic, setIsPublic] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
-
-  const isValidEmail = (value: string) => {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
-  };
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -59,10 +53,10 @@ export default function EditProfileScreen() {
       }
 
       setEmail(currentUser.email ?? '');
-      setOriginalEmail(currentUser.email ?? '');
 
       try {
         const me = await fetchMe();
+        setEmail(me.email || currentUser.email || '');
         setDisplayName(
           resolveDisplayName(me.display_name, currentUser.user_metadata)
         );
@@ -117,20 +111,14 @@ export default function EditProfileScreen() {
 
   const handleSave = async () => {
     const cleanName = displayName.trim();
-    const cleanEmail = email.trim();
 
-    if (!cleanName || !cleanEmail) {
-      Alert.alert('Error', 'Please complete all fields.');
+    if (!cleanName) {
+      Alert.alert('Error', 'Please enter a display name.');
       return;
     }
 
     if (cleanName.length < 2) {
       Alert.alert('Error', 'Display name must have at least 2 characters.');
-      return;
-    }
-
-    if (!isValidEmail(cleanEmail)) {
-      Alert.alert('Error', 'Please enter a valid email address.');
       return;
     }
 
@@ -150,22 +138,6 @@ export default function EditProfileScreen() {
           syncErr instanceof Error
             ? `Profile saved on the server, but Supabase sync failed: ${syncErr.message}`
             : 'Profile saved on the server, but Supabase sync failed.'
-        );
-        return;
-      }
-
-      const emailChanged = cleanEmail !== originalEmail;
-      if (emailChanged) {
-        const { error } = await supabase.auth.updateUser({ email: cleanEmail });
-        if (error) {
-          Alert.alert('Error', error.message);
-          return;
-        }
-
-        Alert.alert(
-          'Profile updated',
-          'Your profile was updated. Please check your inbox to confirm the new email address.',
-          [{ text: 'OK', onPress: () => router.back() }]
         );
         return;
       }
@@ -251,7 +223,7 @@ export default function EditProfileScreen() {
                 <View style={styles.fieldGroup}>
                   <Text style={styles.label}>Email</Text>
 
-                  <View style={styles.inputWrapper}>
+                  <View style={[styles.inputWrapper, styles.readOnlyInput]}>
                     <Ionicons
                       name="mail-outline"
                       size={20}
@@ -259,15 +231,9 @@ export default function EditProfileScreen() {
                       style={styles.icon}
                     />
 
-                    <TextInput
-                      value={email}
-                      onChangeText={setEmail}
-                      style={styles.input}
-                      placeholder="Enter email"
-                      placeholderTextColor="#777"
-                      autoCapitalize="none"
-                      keyboardType="email-address"
-                    />
+                    <Text style={styles.readOnlyText} numberOfLines={1}>
+                      {email || '—'}
+                    </Text>
                   </View>
                 </View>
 
@@ -289,8 +255,7 @@ export default function EditProfileScreen() {
                 )}
 
                 <Text style={styles.infoText}>
-                  If you change your email, you may need to confirm it from your
-                  inbox.
+                  Email is your account identifier and cannot be changed here.
                 </Text>
 
                 <TouchableOpacity
