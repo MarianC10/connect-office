@@ -876,14 +876,14 @@ const styles = StyleSheet.create({
 
   topImageCard: {
     width: '100%',
-    height: 292,
+    height: 340,
     overflow: 'hidden',
     backgroundColor: '#bcbcbc',
   },
 
   officeImage: {
     width: SCREEN_WIDTH,
-    height: 292,
+    height: 340,
   },
 
   imagePlaceholder: {
@@ -915,19 +915,19 @@ const styles = StyleSheet.create({
 
   backIcon: {
     position: 'absolute',
-    top: 10,
+    top: 45,
     left: 9,
   },
 
   shareIcon: {
     position: 'absolute',
-    top: 11,
+    top: 46,
     right: 52,
   },
 
   heartIcon: {
     position: 'absolute',
-    top: 8,
+    top: 43,
     right: 12,
   },
 
