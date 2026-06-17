@@ -17,6 +17,11 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 
 import { syncCurrentUserWithBackend } from '@/lib/api';
+import {
+  isLikelyAutoDisplayName,
+  usernameFromSupabaseMetadata,
+} from '@/lib/display-name';
+import { fetchMe, updateMe } from '@/lib/profile';
 import { supabase } from '@/lib/supabase';
 import { isValidEmail } from '@/utils/validation';
 
@@ -52,6 +57,22 @@ export default function LoginScreen() {
         return;
       }
       await syncCurrentUserWithBackend(session.access_token);
+
+      const preferredUsername = usernameFromSupabaseMetadata(
+        session.user.user_metadata
+      );
+      if (preferredUsername.length >= 2) {
+        try {
+          const me = await fetchMe();
+          const email = me.email ?? trimmed;
+          if (isLikelyAutoDisplayName(me.display_name, email)) {
+            await updateMe({ display_name: preferredUsername });
+          }
+        } catch {
+          // Non-fatal: user can set display name in profile edit.
+        }
+      }
+
       router.replace('/(tabs)');
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

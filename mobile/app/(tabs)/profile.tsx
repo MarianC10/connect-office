@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -6,7 +6,6 @@ import {
   TouchableOpacity,
   ImageBackground,
   ActivityIndicator,
-  Image,
 } from 'react-native';
 import {
   Feather,
@@ -15,12 +14,16 @@ import {
   AntDesign,
 } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { supabase } from '@/lib/supabase';
+import { UserAvatar } from '@/components/user-avatar';
+import { resolveDisplayName } from '@/lib/display-name';
+import { fetchMe } from '@/lib/profile';
 
 type ProfileUser = {
   name: string;
   email: string;
+  avatarUrl: string | null;
 };
 
 export default function ProfileScreen() {
@@ -29,56 +32,60 @@ export default function ProfileScreen() {
   const [user, setUser] = useState<ProfileUser>({
     name: 'User',
     email: '',
+    avatarUrl: null,
   });
 
   const [loading, setLoading] = useState(true);
+  const [avatarRefreshKey, setAvatarRefreshKey] = useState(0);
 
-  const getUsernameFromMetadata = (metadata: any) => {
-    return (
-      metadata?.preferred_username ||
-      metadata?.user_name ||
-      metadata?.username ||
-      'User'
-    );
-  };
+  const loadProfile = useCallback(async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+
+    const currentUser = session?.user;
+
+    if (!currentUser) {
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const me = await fetchMe();
+      setUser({
+        name: resolveDisplayName(me.display_name, currentUser.user_metadata),
+        email: me.email ?? currentUser.email ?? '',
+        avatarUrl: me.avatar_url,
+      });
+      setAvatarRefreshKey((key) => key + 1);
+    } catch {
+      setUser({
+        name: 'User',
+        email: currentUser.email ?? '',
+        avatarUrl: null,
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadProfile();
+    }, [loadProfile])
+  );
 
   useEffect(() => {
-    const loadUserProfile = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-
-      const currentUser = session?.user;
-
-      if (currentUser) {
-        setUser({
-          name: getUsernameFromMetadata(currentUser.user_metadata),
-          email: currentUser.email ?? '',
-        });
-      }
-
-      setLoading(false);
-    };
-
-    void loadUserProfile();
-
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      const currentUser = session?.user;
-
-      if (currentUser) {
-        setUser({
-          name: getUsernameFromMetadata(currentUser.user_metadata),
-          email: currentUser.email ?? '',
-        });
-      }
+    } = supabase.auth.onAuthStateChange(() => {
+      void loadProfile();
     });
 
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [loadProfile]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -120,7 +127,11 @@ export default function ProfileScreen() {
             activeOpacity={0.85}
           >
             <View style={styles.avatar}>
-              <Feather name="user" size={42} color="#333" />
+              <UserAvatar
+                key={avatarRefreshKey}
+                uri={user.avatarUrl}
+                size={68}
+              />
             </View>
 
             <View style={styles.userInfo}>
@@ -242,6 +253,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 14,
+    overflow: 'hidden',
   },
 
   userInfo: {

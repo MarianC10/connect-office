@@ -22,6 +22,28 @@ func todayInBucharest() time.Time {
 	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, bucharestLoc)
 }
 
+func ParseBookingDate(s string) (time.Time, error) {
+	return parseBookingDate(s)
+}
+
+func ValidateBookingWindow(date time.Time) error {
+	return validateBookingWindow(date)
+}
+
+func IsTodayInBucharest(date time.Time) bool {
+	d := date.In(bucharestLoc)
+	d = time.Date(d.Year(), d.Month(), d.Day(), 0, 0, 0, 0, bucharestLoc)
+	return d.Equal(todayInBucharest())
+}
+
+func TodayDateString() string {
+	return formatBookingDate(todayInBucharest())
+}
+
+func FormatBookingDate(t time.Time) string {
+	return formatBookingDate(t)
+}
+
 func parseBookingDate(s string) (time.Time, error) {
 	t, err := time.ParseInLocation(bookingDateLayout, s, bucharestLoc)
 	if err != nil {

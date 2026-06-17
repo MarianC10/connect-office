@@ -28,6 +28,12 @@ import {
   LocationAvailability,
   todayInBucharest,
 } from '@/lib/bookings';
+import { UserAvatar } from '@/components/user-avatar';
+import {
+  fetchVisibleBookings,
+  VisibleBookingPerson,
+} from '@/lib/profile';
+import { SOCIAL_ENABLED } from '@/lib/social-config';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -83,6 +89,42 @@ function makeDateKey(date: Date) {
 function parseDateKey(dateKey: string): Date {
   const [year, month, day] = dateKey.split('-').map(Number);
   return new Date(year, month - 1, day);
+}
+
+type OfficePerson = VisibleBookingPerson;
+
+function PersonList({
+  people,
+  emptyMessage,
+  onPressPerson,
+}: {
+  people: OfficePerson[];
+  emptyMessage: string;
+  onPressPerson: (userId: string) => void;
+}) {
+  if (people.length === 0) {
+    return <Text style={styles.peopleEmpty}>{emptyMessage}</Text>;
+  }
+
+  return (
+    <>
+      {people.map((person) => (
+        <TouchableOpacity
+          key={person.user_id}
+          style={styles.personRow}
+          onPress={() => onPressPerson(person.user_id)}
+        >
+          <UserAvatar uri={person.avatar_url} size={40} />
+          <View style={styles.personText}>
+            <Text style={styles.personName}>{person.display_name}</Text>
+            <Text style={styles.personMeta}>
+              {person.is_friend ? 'Friend' : 'Public profile'}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      ))}
+    </>
+  );
 }
 
 function getAmenityIcon(name: string) {
@@ -173,6 +215,9 @@ export default function OfficeDetailScreen() {
   );
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
   const [reserving, setReserving] = useState(false);
+  const [bookedPeople, setBookedPeople] = useState<VisibleBookingPerson[]>([]);
+  const [peopleLoading, setPeopleLoading] = useState(false);
+  const [peopleDate, setPeopleDate] = useState(() => todayInBucharest());
 
   useEffect(() => {
     let cancelled = false;
@@ -211,6 +256,46 @@ export default function OfficeDetailScreen() {
       cancelled = true;
     };
   }, [locationId]);
+
+  useEffect(() => {
+    if (!SOCIAL_ENABLED || !locationId) {
+      setBookedPeople([]);
+      return;
+    }
+
+    let cancelled = false;
+    setPeopleLoading(true);
+
+    const loadPeople = async () => {
+      try {
+        const booked = await fetchVisibleBookings(locationId, peopleDate);
+        if (!cancelled) {
+          setBookedPeople(booked);
+        }
+      } catch {
+        if (!cancelled) {
+          setBookedPeople([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setPeopleLoading(false);
+        }
+      }
+    };
+
+    void loadPeople();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [locationId, peopleDate]);
+
+  useEffect(() => {
+    if (!bookingVisible || !selectedDate) {
+      return;
+    }
+    setPeopleDate(selectedDate);
+  }, [bookingVisible, selectedDate]);
 
   useEffect(() => {
     if (!bookingVisible) {
@@ -350,6 +435,11 @@ export default function OfficeDetailScreen() {
     }
   };
 
+  const closeBookingModal = () => {
+    setBookingVisible(false);
+    setPeopleDate(todayInBucharest());
+  };
+
   const openBookingModal = () => {
     const todayKey = todayInBucharest();
     setCalendarMonth(parseDateKey(todayKey));
@@ -412,7 +502,7 @@ export default function OfficeDetailScreen() {
         [
           {
             text: 'OK',
-            onPress: () => setBookingVisible(false),
+            onPress: () => closeBookingModal(),
           },
         ]
       );
@@ -455,6 +545,13 @@ export default function OfficeDetailScreen() {
     availabilityLoading ||
     !!selectedUserBooking ||
     availability?.status === 'full';
+
+  const openUserProfile = (userId: string) => {
+    router.push({
+      pathname: '/users/[id]',
+      params: { id: userId },
+    } as never);
+  };
 
   if (loading) {
     return (
@@ -578,6 +675,26 @@ export default function OfficeDetailScreen() {
 
             <Text style={styles.descriptionText}>{office.description}</Text>
 
+            {SOCIAL_ENABLED && (
+              <View style={styles.peopleSection}>
+                <Text style={styles.peopleTitle}>
+                  Booked · {formatBookingDateLabel(peopleDate)}
+                </Text>
+                <Text style={styles.peopleSubtitle}>
+                  Friends and public profiles with a reservation for this day
+                </Text>
+                {peopleLoading ? (
+                  <ActivityIndicator color="#1E2A5E" style={styles.peopleLoader} />
+                ) : (
+                  <PersonList
+                    people={bookedPeople}
+                    emptyMessage="No friends or public bookers for this day yet."
+                    onPressPerson={openUserProfile}
+                  />
+                )}
+              </View>
+            )}
+
             <View style={styles.bookingBar}>
               <TouchableOpacity
                 activeOpacity={0.8}
@@ -595,14 +712,14 @@ export default function OfficeDetailScreen() {
         visible={bookingVisible}
         animationType="slide"
         transparent
-        onRequestClose={() => setBookingVisible(false)}
+        onRequestClose={closeBookingModal}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.bookingModal}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select booking day</Text>
 
-              <TouchableOpacity onPress={() => setBookingVisible(false)}>
+              <TouchableOpacity onPress={closeBookingModal}>
                 <Ionicons name="close" size={26} color="#222" />
               </TouchableOpacity>
             </View>
@@ -1133,5 +1250,62 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '800',
     fontFamily: 'serif',
+  },
+
+  peopleSection: {
+    marginTop: 18,
+    marginBottom: 8,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: 'rgba(30, 42, 94, 0.06)',
+  },
+
+  peopleTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E2A5E',
+    marginBottom: 4,
+    fontFamily: 'serif',
+  },
+
+  peopleSubtitle: {
+    fontSize: 13,
+    color: '#666',
+    marginBottom: 8,
+    fontFamily: 'serif',
+  },
+
+  peopleLoader: {
+    marginVertical: 8,
+  },
+
+  peopleEmpty: {
+    color: '#666',
+    fontSize: 14,
+    fontFamily: 'serif',
+  },
+
+  personRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+  },
+
+  personText: {
+    flex: 1,
+  },
+
+  personName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#222',
+    fontFamily: 'serif',
+  },
+
+  personMeta: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 1,
   },
 });

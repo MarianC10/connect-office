@@ -7,38 +7,36 @@ import {
   Platform,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 
+import { UserAvatar } from '@/components/user-avatar';
+import {
+  resolveDisplayName,
+  syncDisplayNameToSupabase,
+} from '@/lib/display-name';
+import { fetchMe, updateMe, uploadAvatar } from '@/lib/profile';
+import { SOCIAL_ENABLED } from '@/lib/social-config';
 import { supabase } from '@/lib/supabase';
 
 export default function EditProfileScreen() {
   const router = useRouter();
 
-  const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
-  const [originalEmail, setOriginalEmail] = useState('');
+  const [isPublic, setIsPublic] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-
-  const getUsernameFromMetadata = (metadata: any) => {
-    return (
-      metadata?.preferred_username ||
-      metadata?.user_name ||
-      metadata?.username ||
-      ''
-    );
-  };
-
-  const isValidEmail = (value: string) => {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
-  };
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -54,73 +52,104 @@ export default function EditProfileScreen() {
         return;
       }
 
-      setUsername(getUsernameFromMetadata(currentUser.user_metadata));
       setEmail(currentUser.email ?? '');
-      setOriginalEmail(currentUser.email ?? '');
-      setLoading(false);
+
+      try {
+        const me = await fetchMe();
+        setEmail(me.email || currentUser.email || '');
+        setDisplayName(
+          resolveDisplayName(me.display_name, currentUser.user_metadata)
+        );
+        setIsPublic(me.is_public);
+        setAvatarUrl(me.avatar_url);
+      } catch (err) {
+        Alert.alert(
+          'Error',
+          err instanceof Error ? err.message : 'Could not load profile.'
+        );
+      } finally {
+        setLoading(false);
+      }
     };
 
     void loadProfile();
   }, [router]);
 
+  const pickAvatar = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission needed', 'Allow photo library access to upload a profile picture.');
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.85,
+    });
+
+    if (result.canceled || !result.assets[0]) {
+      return;
+    }
+
+    const asset = result.assets[0];
+    setUploadingAvatar(true);
+    try {
+      const me = await uploadAvatar(asset.uri, asset.mimeType ?? 'image/jpeg');
+      setAvatarUrl(me.avatar_url);
+      Alert.alert('Updated', 'Profile picture saved.');
+    } catch (err) {
+      Alert.alert(
+        'Upload failed',
+        err instanceof Error ? err.message : 'Could not upload profile picture.'
+      );
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
   const handleSave = async () => {
-    const cleanUsername = username.trim();
-    const cleanEmail = email.trim();
+    const cleanName = displayName.trim();
 
-    if (!cleanUsername || !cleanEmail) {
-      Alert.alert('Error', 'Please complete all fields.');
+    if (!cleanName) {
+      Alert.alert('Error', 'Please enter a display name.');
       return;
     }
 
-    if (cleanUsername.length < 2) {
-      Alert.alert('Error', 'Username must have at least 2 characters.');
-      return;
-    }
-
-    if (!isValidEmail(cleanEmail)) {
-      Alert.alert('Error', 'Please enter a valid email address.');
+    if (cleanName.length < 2) {
+      Alert.alert('Error', 'Display name must have at least 2 characters.');
       return;
     }
 
     setSaving(true);
 
     try {
-      const emailChanged = cleanEmail !== originalEmail;
-
-      const { error } = await supabase.auth.updateUser({
-        email: emailChanged ? cleanEmail : undefined,
-        data: {
-          preferred_username: cleanUsername,
-        },
+      await updateMe({
+        display_name: cleanName,
+        is_public: SOCIAL_ENABLED ? isPublic : undefined,
       });
 
-      if (error) {
-        Alert.alert('Error', error.message);
-        return;
-      }
-
-      if (emailChanged) {
+      try {
+        await syncDisplayNameToSupabase(cleanName);
+      } catch (syncErr) {
         Alert.alert(
-          'Profile updated',
-          'Your username was updated. Please check your inbox to confirm the new email address.',
-          [
-            {
-              text: 'OK',
-              onPress: () => router.back(),
-            },
-          ]
+          'Partially saved',
+          syncErr instanceof Error
+            ? `Profile saved on the server, but Supabase sync failed: ${syncErr.message}`
+            : 'Profile saved on the server, but Supabase sync failed.'
         );
         return;
       }
 
       Alert.alert('Success', 'Your profile was updated successfully.', [
-        {
-          text: 'OK',
-          onPress: () => router.back(),
-        },
+        { text: 'OK', onPress: () => router.back() },
       ]);
-    } catch {
-      Alert.alert('Error', 'Something went wrong. Please try again.');
+    } catch (err) {
+      Alert.alert(
+        'Error',
+        err instanceof Error ? err.message : 'Something went wrong. Please try again.'
+      );
     } finally {
       setSaving(false);
     }
@@ -146,9 +175,22 @@ export default function EditProfileScreen() {
               <Ionicons name="arrow-back" size={24} color="#1E2A5E" />
             </TouchableOpacity>
 
-            <View style={styles.headerIcon}>
-              <Ionicons name="person-outline" size={42} color="#1E2A5E" />
-            </View>
+            <TouchableOpacity
+              style={styles.avatarButton}
+              onPress={() => void pickAvatar()}
+              disabled={uploadingAvatar || !SOCIAL_ENABLED}
+            >
+              {uploadingAvatar ? (
+                <ActivityIndicator color="#1E2A5E" />
+              ) : (
+                <UserAvatar uri={avatarUrl} size={82} />
+              )}
+              {SOCIAL_ENABLED && (
+                <View style={styles.avatarEditBadge}>
+                  <Ionicons name="camera" size={14} color="#fff" />
+                </View>
+              )}
+            </TouchableOpacity>
 
             <Text style={styles.title}>Edit Profile</Text>
 
@@ -157,7 +199,7 @@ export default function EditProfileScreen() {
             ) : (
               <>
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.label}>Username</Text>
+                  <Text style={styles.label}>Display name</Text>
 
                   <View style={styles.inputWrapper}>
                     <Ionicons
@@ -168,10 +210,10 @@ export default function EditProfileScreen() {
                     />
 
                     <TextInput
-                      value={username}
-                      onChangeText={setUsername}
+                      value={displayName}
+                      onChangeText={setDisplayName}
                       style={styles.input}
-                      placeholder="Enter username"
+                      placeholder="Enter display name"
                       placeholderTextColor="#777"
                       autoCapitalize="words"
                     />
@@ -181,7 +223,7 @@ export default function EditProfileScreen() {
                 <View style={styles.fieldGroup}>
                   <Text style={styles.label}>Email</Text>
 
-                  <View style={styles.inputWrapper}>
+                  <View style={[styles.inputWrapper, styles.readOnlyInput]}>
                     <Ionicons
                       name="mail-outline"
                       size={20}
@@ -189,21 +231,31 @@ export default function EditProfileScreen() {
                       style={styles.icon}
                     />
 
-                    <TextInput
-                      value={email}
-                      onChangeText={setEmail}
-                      style={styles.input}
-                      placeholder="Enter email"
-                      placeholderTextColor="#777"
-                      autoCapitalize="none"
-                      keyboardType="email-address"
-                    />
+                    <Text style={styles.readOnlyText} numberOfLines={1}>
+                      {email || '—'}
+                    </Text>
                   </View>
                 </View>
 
+                {SOCIAL_ENABLED && (
+                  <View style={styles.toggleRow}>
+                    <View style={styles.toggleTextWrap}>
+                      <Text style={styles.toggleLabel}>Public profile</Text>
+                      <Text style={styles.toggleHint}>
+                        Public profiles appear in name search.
+                      </Text>
+                    </View>
+                    <Switch
+                      value={isPublic}
+                      onValueChange={setIsPublic}
+                      trackColor={{ false: '#ccc', true: '#8ea0d8' }}
+                      thumbColor={isPublic ? '#1E2A5E' : '#f4f4f4'}
+                    />
+                  </View>
+                )}
+
                 <Text style={styles.infoText}>
-                  If you change your email, you may need to confirm it from your
-                  inbox.
+                  Email is your account identifier and cannot be changed here.
                 </Text>
 
                 <TouchableOpacity
@@ -274,16 +326,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  headerIcon: {
-    width: 82,
-    height: 82,
-    borderRadius: 41,
-    backgroundColor: 'rgba(255,255,255,0.6)',
+  avatarButton: {
+    marginBottom: 14,
+    position: 'relative',
+  },
+
+  avatarEditBadge: {
+    position: 'absolute',
+    right: 0,
+    bottom: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#1E2A5E',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.35)',
+    borderWidth: 2,
+    borderColor: '#fff',
   },
 
   title: {
@@ -325,6 +384,32 @@ const styles = StyleSheet.create({
     flex: 1,
     color: '#000',
     fontSize: 16,
+  },
+
+  toggleRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+
+  toggleTextWrap: {
+    flex: 1,
+    paddingRight: 12,
+  },
+
+  toggleLabel: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+
+  toggleHint: {
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 12,
+    marginTop: 2,
   },
 
   infoText: {

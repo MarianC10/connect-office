@@ -106,3 +106,7 @@ logs/
 .expo-shared/assets.json
 
 .docs/
+
+# Social profile uploads (keep default.png)
+backend/static/avatars/*
+!backend/static/avatars/default.png
