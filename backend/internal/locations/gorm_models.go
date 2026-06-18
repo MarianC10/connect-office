@@ -32,6 +32,12 @@ type Location struct {
 	Capacity    int        `gorm:"column:capacity;type:integer;not null;default:40"`
 	OwnerID     *uuid.UUID `gorm:"column:owner_id;type:uuid"`
 	Images      LocationImageList `gorm:"column:images;type:jsonb;not null;default:'[]'"`
+	Timezone      string            `gorm:"column:timezone;type:text;not null;default:'Europe/Bucharest'"`
+	WeekdayOpen   string            `gorm:"column:weekday_open;type:time;not null;default:'09:00'"`
+	WeekdayClose  string            `gorm:"column:weekday_close;type:time;not null;default:'18:00'"`
+	WeekendOpen   string            `gorm:"column:weekend_open;type:time;not null;default:'10:00'"`
+	WeekendClose  string            `gorm:"column:weekend_close;type:time;not null;default:'16:00'"`
+	HoursOverrides HoursOverridesMap `gorm:"column:hours_overrides;type:jsonb;not null;default:'{}'"`
 	CreatedAt   time.Time `gorm:"column:created_at;type:timestamptz;not null;autoCreateTime"`
 	UpdatedAt   time.Time `gorm:"column:updated_at;type:timestamptz;not null;autoUpdateTime"`
 

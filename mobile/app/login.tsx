@@ -22,7 +22,7 @@ import {
   usernameFromSupabaseMetadata,
 } from '@/lib/display-name';
 import { fetchMe, updateMe } from '@/lib/profile';
-import { homeRouteForRole } from '@/lib/roles';
+import { resetToHome } from '@/lib/navigation';
 import { supabase } from '@/lib/supabase';
 import { isValidEmail } from '@/utils/validation';
 
@@ -74,7 +74,7 @@ export default function LoginScreen() {
         }
       }
 
-      router.replace(homeRouteForRole(me.role));
+      resetToHome(me.role);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       Alert.alert('Could not sync with API', msg);
@@ -168,6 +168,11 @@ const styles = StyleSheet.create({
   background: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+
+  centered: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   scrollContent: {

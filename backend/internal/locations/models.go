@@ -21,6 +21,12 @@ type LocationResponse struct {
 	Latitude    float64           `json:"latitude"`
 	Longitude   float64           `json:"longitude"`
 	Capacity    int               `json:"capacity"`
+	Timezone      string            `json:"timezone"`
+	WeekdayOpen   string            `json:"weekday_open"`
+	WeekdayClose  string            `json:"weekday_close"`
+	WeekendOpen   string            `json:"weekend_open"`
+	WeekendClose  string            `json:"weekend_close"`
+	HoursOverrides map[string]HoursOverride `json:"hours_overrides,omitempty"`
 	Images      []LocationImageResponse `json:"images"`
 	Amenities   []AmenityResponse `json:"amenities"`
 }

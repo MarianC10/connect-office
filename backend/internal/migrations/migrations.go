@@ -321,6 +321,80 @@ var All = []Migration{
 			return nil
 		},
 	},
+	{
+		ID:          "0013_location_working_hours",
+		Description: "Add working hours columns to locations",
+		Up: func(ctx context.Context, tx *gorm.DB) error {
+			statements := []string{
+				`ALTER TABLE locations
+				ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'Europe/Bucharest'`,
+				`ALTER TABLE locations
+				ADD COLUMN IF NOT EXISTS weekday_open TIME NOT NULL DEFAULT '09:00'`,
+				`ALTER TABLE locations
+				ADD COLUMN IF NOT EXISTS weekday_close TIME NOT NULL DEFAULT '18:00'`,
+				`ALTER TABLE locations
+				ADD COLUMN IF NOT EXISTS weekend_open TIME NOT NULL DEFAULT '10:00'`,
+				`ALTER TABLE locations
+				ADD COLUMN IF NOT EXISTS weekend_close TIME NOT NULL DEFAULT '16:00'`,
+				`ALTER TABLE locations
+				ADD COLUMN IF NOT EXISTS hours_overrides JSONB NOT NULL DEFAULT '{}'`,
+			}
+			for _, stmt := range statements {
+				if err := tx.WithContext(ctx).Exec(stmt).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		ID:          "0014_check_ins",
+		Description: "Create check_ins table for office check-in flow",
+		Up: func(ctx context.Context, tx *gorm.DB) error {
+			statements := []string{
+				`CREATE TABLE IF NOT EXISTS check_ins (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					user_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+					location_id UUID NOT NULL REFERENCES locations (id) ON DELETE CASCADE,
+					visit_date DATE NOT NULL,
+					checked_in_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+					checked_out_at TIMESTAMPTZ,
+					status TEXT NOT NULL DEFAULT 'active'
+						CHECK (status IN ('active', 'checked_out', 'auto_checked_out')),
+					entrance_consumed BOOLEAN NOT NULL DEFAULT false,
+					latitude DOUBLE PRECISION,
+					longitude DOUBLE PRECISION,
+					created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+					updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+				)`,
+				`CREATE INDEX IF NOT EXISTS idx_check_ins_location_active
+					ON check_ins (location_id) WHERE status = 'active'`,
+				`CREATE INDEX IF NOT EXISTS idx_check_ins_user_visit
+					ON check_ins (user_id, location_id, visit_date)`,
+				`CREATE UNIQUE INDEX IF NOT EXISTS idx_check_ins_user_active
+					ON check_ins (user_id) WHERE status = 'active'`,
+			}
+			for _, stmt := range statements {
+				if err := tx.WithContext(ctx).Exec(stmt).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		ID:          "0015_cluj_24h",
+		Description: "Set Cluj office to 24/7 working hours",
+		Up: func(ctx context.Context, tx *gorm.DB) error {
+			return tx.WithContext(ctx).Exec(`
+				UPDATE locations
+				SET weekday_open = '00:00',
+				    weekday_close = '00:00',
+				    weekend_open = '00:00',
+				    weekend_close = '00:00'
+				WHERE id = 'a0000001-0000-4000-8000-000000000001'`).Error
+		},
+	},
 }
 
 func Run(ctx context.Context, db *gorm.DB) error {

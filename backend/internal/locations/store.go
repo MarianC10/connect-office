@@ -2,7 +2,9 @@ package locations
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 )
@@ -10,6 +12,7 @@ import (
 type Store interface {
 	ListLocations(ctx context.Context) ([]LocationResponse, error)
 	GetLocationByID(ctx context.Context, id string) (LocationResponse, error)
+	GetLocationModel(ctx context.Context, id string) (Location, error)
 }
 
 type PostgresStore struct {
@@ -52,6 +55,22 @@ func (p *PostgresStore) GetLocationByID(ctx context.Context, id string) (Locatio
 	return locationToResponse(loc), nil
 }
 
+func (p *PostgresStore) GetLocationModel(ctx context.Context, id string) (Location, error) {
+	var loc Location
+	err := p.db.WithContext(ctx).
+		Preload("Amenities", func(db *gorm.DB) *gorm.DB {
+			return db.Order("name ASC")
+		}).
+		First(&loc, "id = ?", id).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return Location{}, gorm.ErrRecordNotFound
+		}
+		return Location{}, fmt.Errorf("get location model by id %q: %w", id, err)
+	}
+	return loc, nil
+}
+
 func locationToResponse(loc Location) LocationResponse {
 	images := make([]LocationImageResponse, 0, len(loc.Images))
 	for _, img := range loc.Images.Slice() {
@@ -79,7 +98,21 @@ func locationToResponse(loc Location) LocationResponse {
 		Latitude:    loc.Latitude,
 		Longitude:   loc.Longitude,
 		Capacity:    loc.Capacity,
+		Timezone:      loc.Timezone,
+		WeekdayOpen:   normalizeClock(loc.WeekdayOpen),
+		WeekdayClose:  normalizeClock(loc.WeekdayClose),
+		WeekendOpen:   normalizeClock(loc.WeekendOpen),
+		WeekendClose:  normalizeClock(loc.WeekendClose),
+		HoursOverrides: loc.HoursOverrides.Map(),
 		Images:      images,
 		Amenities:   amenities,
 	}
+}
+
+func normalizeClock(clock string) string {
+	clock = strings.TrimSpace(clock)
+	if len(clock) >= 5 {
+		return clock[:5]
+	}
+	return clock
 }

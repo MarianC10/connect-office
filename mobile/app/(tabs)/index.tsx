@@ -111,12 +111,19 @@ function getLocationMainImage(location: Location) {
 
 // ─── Fetch hook ───────────────────────────────────────────────────────────────
 
+let cachedLocations: Location[] | null = null;
+let cachedLocationsError: string | null = null;
+
 function useLocations() {
-  const [locations, setLocations] = useState<Location[]>([]);
-  const [loading, setLoading]     = useState<boolean>(true);
-  const [error, setError]         = useState<string | null>(null);
+  const [locations, setLocations] = useState<Location[]>(cachedLocations ?? []);
+  const [loading, setLoading] = useState<boolean>(cachedLocations === null);
+  const [error, setError] = useState<string | null>(cachedLocationsError);
 
   useEffect(() => {
+    if (cachedLocations !== null) {
+      return;
+    }
+
     let cancelled = false;
     (async () => {
       try {
@@ -127,9 +134,14 @@ function useLocations() {
         if (cancelled) return;
         if (!r.ok) throw new Error(`Server error: HTTP ${r.status}`);
         const data = (await r.json()) as Location[];
+        cachedLocations = data;
+        cachedLocationsError = null;
         setLocations(data);
+        setError(null);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+        const message = e instanceof Error ? e.message : String(e);
+        cachedLocationsError = message;
+        if (!cancelled) setError(message);
       } finally {
         if (!cancelled) setLoading(false);
       }

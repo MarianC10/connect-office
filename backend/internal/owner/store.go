@@ -123,6 +123,11 @@ func (s *PostgresStore) CreateLocation(ctx context.Context, ownerID uuid.UUID, r
 		Capacity:    capacity,
 		OwnerID:     &ownerID,
 		Images:      locations.LocationImageList{},
+		Timezone:     defaultTimezone(req.Timezone),
+		WeekdayOpen:  defaultClock(req.WeekdayOpen, "09:00"),
+		WeekdayClose: defaultClock(req.WeekdayClose, "18:00"),
+		WeekendOpen:  defaultClock(req.WeekendOpen, "10:00"),
+		WeekendClose: defaultClock(req.WeekendClose, "16:00"),
 	}
 
 	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -163,6 +168,21 @@ func (s *PostgresStore) UpdateLocation(ctx context.Context, ownerID, locationID 
 	}
 	if req.Description != nil {
 		updates["description"] = strings.TrimSpace(*req.Description)
+	}
+	if req.Timezone != nil {
+		updates["timezone"] = defaultTimezone(*req.Timezone)
+	}
+	if req.WeekdayOpen != nil {
+		updates["weekday_open"] = defaultClock(*req.WeekdayOpen, "09:00")
+	}
+	if req.WeekdayClose != nil {
+		updates["weekday_close"] = defaultClock(*req.WeekdayClose, "18:00")
+	}
+	if req.WeekendOpen != nil {
+		updates["weekend_open"] = defaultClock(*req.WeekendOpen, "10:00")
+	}
+	if req.WeekendClose != nil {
+		updates["weekend_close"] = defaultClock(*req.WeekendClose, "16:00")
 	}
 	if req.Images != nil {
 		imgs := make(locations.LocationImageList, 0, len(req.Images))
@@ -365,8 +385,38 @@ func locationToDetail(loc locations.Location) OwnerLocationDetail {
 		Latitude:    loc.Latitude,
 		Longitude:   loc.Longitude,
 		Capacity:    loc.Capacity,
+		Timezone:      loc.Timezone,
+		WeekdayOpen:   normalizeOwnerClock(loc.WeekdayOpen),
+		WeekdayClose:  normalizeOwnerClock(loc.WeekdayClose),
+		WeekendOpen:   normalizeOwnerClock(loc.WeekendOpen),
+		WeekendClose:  normalizeOwnerClock(loc.WeekendClose),
+		HoursOverrides: loc.HoursOverrides.Map(),
 		Images:      images,
 		AmenityIDs:  amenityIDs,
 		Amenities:   amenities,
 	}
+}
+
+func defaultTimezone(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return locations.DefaultTimezone()
+	}
+	return value
+}
+
+func defaultClock(value, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+func normalizeOwnerClock(clock string) string {
+	clock = strings.TrimSpace(clock)
+	if len(clock) >= 5 {
+		return clock[:5]
+	}
+	return clock
 }

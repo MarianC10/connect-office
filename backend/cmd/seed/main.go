@@ -51,6 +51,10 @@ type seedLocation struct {
 	Longitude   float64
 	Capacity    int
 	Images      []seedLocationImage
+	WeekdayOpen  string
+	WeekdayClose string
+	WeekendOpen  string
+	WeekendClose string
 }
 
 type seedLocationImage struct {
@@ -201,6 +205,10 @@ var locationsSeed = []seedLocation{
 		Latitude:    46.7709,
 		Longitude:   23.5969,
 		Capacity:    40,
+		WeekdayOpen:  "00:00",
+		WeekdayClose: "00:00",
+		WeekendOpen:  "00:00",
+		WeekendClose: "00:00",
 		Images: []seedLocationImage{
 			{ID: "cluj-lobby", Path: "/locations/cluj/lobby.jpg"},
 			{ID: "cluj-open-space", Path: "/locations/cluj/open-space.jpg"},
@@ -314,6 +322,13 @@ var subscriptionPlansSeed = []seedSubscriptionPlan{
 	},
 }
 
+func defaultSeedTime(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
 func main() {
 	if err := godotenv.Load(".env"); err != nil {
 		_ = godotenv.Load("backend/.env")
@@ -364,9 +379,11 @@ func main() {
 		}
 
 		_, err = tx.Exec(ctx, `
-INSERT INTO locations (id, name, description, address, city, county, country, latitude, longitude, capacity, images, owner_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12)`,
-			loc.ID, loc.Name, loc.Description, loc.Address, loc.City, loc.County, loc.Country, loc.Latitude, loc.Longitude, loc.Capacity, imagesJSON, ownerID)
+INSERT INTO locations (id, name, description, address, city, county, country, latitude, longitude, capacity, images, owner_id, weekday_open, weekday_close, weekend_open, weekend_close)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13::time, $14::time, $15::time, $16::time)`,
+			loc.ID, loc.Name, loc.Description, loc.Address, loc.City, loc.County, loc.Country, loc.Latitude, loc.Longitude, loc.Capacity, imagesJSON, ownerID,
+			defaultSeedTime(loc.WeekdayOpen, "09:00"), defaultSeedTime(loc.WeekdayClose, "18:00"),
+			defaultSeedTime(loc.WeekendOpen, "10:00"), defaultSeedTime(loc.WeekendClose, "16:00"))
 		if err != nil {
 			log.Fatalf("insert location %s: %v", loc.Name, err)
 		}

@@ -50,6 +50,10 @@ const TILE_SIZE = (SCREEN_WIDTH - 36 - CARD_PADDING * 2 - TILE_GAP * 2) / 3;
 type LocationDraft = {
   officeName: string;
   description: string;
+  weekdayOpen: string;
+  weekdayClose: string;
+  weekendOpen: string;
+  weekendClose: string;
 };
 
 export default function EditLocationScreen() {
@@ -60,6 +64,10 @@ export default function EditLocationScreen() {
   const [draft, setDraft] = useState<LocationDraft>({
     officeName: '',
     description: '',
+    weekdayOpen: '09:00',
+    weekdayClose: '18:00',
+    weekendOpen: '10:00',
+    weekendClose: '16:00',
   });
   const [amenities, setAmenities] = useState<AmenityCatalogItem[]>([]);
   const [selectedAmenityIds, setSelectedAmenityIds] = useState<string[]>([]);
@@ -83,6 +91,10 @@ export default function EditLocationScreen() {
       setDraft({
         officeName: loc.name,
         description: loc.description,
+        weekdayOpen: loc.weekday_open ?? '09:00',
+        weekdayClose: loc.weekday_close ?? '18:00',
+        weekendOpen: loc.weekend_open ?? '10:00',
+        weekendClose: loc.weekend_close ?? '16:00',
       });
       setSelectedAmenityIds(loc.amenity_ids);
       setImages(loc.images ?? []);
@@ -162,6 +174,10 @@ export default function EditLocationScreen() {
       await updateOwnerLocation(locationId, {
         name: draft.officeName.trim(),
         description: draft.description.trim(),
+        weekday_open: draft.weekdayOpen.trim(),
+        weekday_close: draft.weekdayClose.trim(),
+        weekend_open: draft.weekendOpen.trim(),
+        weekend_close: draft.weekendClose.trim(),
         amenity_ids: selectedAmenityIds,
         images,
       });
@@ -242,6 +258,45 @@ export default function EditLocationScreen() {
                   {!draft.description && !descriptionFocused && (
                     <Text style={styles.descriptionPlaceholder}>Enter description</Text>
                   )}
+                </View>
+              </FormSection>
+
+              <FormSection title="Working hours">
+                <Text style={styles.hoursLabel}>Weekdays (Mon–Fri)</Text>
+                <View style={styles.hoursRow}>
+                  <TextInput
+                    value={draft.weekdayOpen}
+                    onChangeText={(value) => updateField('weekdayOpen', value)}
+                    style={styles.hoursInput}
+                    placeholder="09:00"
+                    placeholderTextColor={C.textMuted}
+                  />
+                  <Text style={styles.hoursDash}>–</Text>
+                  <TextInput
+                    value={draft.weekdayClose}
+                    onChangeText={(value) => updateField('weekdayClose', value)}
+                    style={styles.hoursInput}
+                    placeholder="18:00"
+                    placeholderTextColor={C.textMuted}
+                  />
+                </View>
+                <Text style={styles.hoursLabel}>Weekends (Sat–Sun)</Text>
+                <View style={styles.hoursRow}>
+                  <TextInput
+                    value={draft.weekendOpen}
+                    onChangeText={(value) => updateField('weekendOpen', value)}
+                    style={styles.hoursInput}
+                    placeholder="10:00"
+                    placeholderTextColor={C.textMuted}
+                  />
+                  <Text style={styles.hoursDash}>–</Text>
+                  <TextInput
+                    value={draft.weekendClose}
+                    onChangeText={(value) => updateField('weekendClose', value)}
+                    style={styles.hoursInput}
+                    placeholder="16:00"
+                    placeholderTextColor={C.textMuted}
+                  />
                 </View>
               </FormSection>
 
@@ -441,6 +496,34 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     pointerEvents: 'none',
+  },
+  hoursLabel: {
+    color: C.textSub,
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  hoursRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 8,
+  },
+  hoursInput: {
+    flex: 1,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#E0E0E0',
+    color: '#000',
+    fontSize: 14,
+    fontWeight: '700',
+    paddingHorizontal: 14,
+    textAlign: 'center',
+  },
+  hoursDash: {
+    color: C.textSub,
+    fontSize: 16,
+    fontWeight: '700',
   },
   imageAddButton: {
     width: '100%',
