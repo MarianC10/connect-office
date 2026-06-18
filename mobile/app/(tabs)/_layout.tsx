@@ -61,7 +61,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="favorites"
         options={{
-          title: "Favourites",
+          title: "Favorites",
           tabBarIcon: ({ color, focused }) => (
             <View style={focused ? styles.iconActive : undefined}>
               <IconSymbol size={24} name="heart.fill" color={color} />
@@ -113,8 +113,22 @@ export default function TabLayout() {
         }}
       />
 
-      {/* Hide explore tab from the default template */}
-      <Tabs.Screen name="explore" options={{ href: null }} />
+{/* Hide explore tab from the default template */}
+<Tabs.Screen name="explore" options={{ href: null }} />
+
+{/* Hide nested pages/folders from the tab bar */}
+<Tabs.Screen name="office" options={{ href: null }} />
+
+<Tabs.Screen name="people/add-by-email" options={{ href: null }} />
+<Tabs.Screen name="people/search" options={{ href: null }} />
+
+<Tabs.Screen name="profile/bookings" options={{ href: null }} />
+<Tabs.Screen name="profile/change_password" options={{ href: null }} />
+<Tabs.Screen name="profile/edit" options={{ href: null }} />
+<Tabs.Screen name="profile/notifications" options={{ href: null }} />
+<Tabs.Screen name="profile/subscription" options={{ href: null }} />
+
+<Tabs.Screen name="edit-location" options={{ href: null }} />
     </Tabs>
   );
 }
