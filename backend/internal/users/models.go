@@ -4,6 +4,7 @@ type MeResponse struct {
 	ID            string `json:"id"`
 	Email         string `json:"email,omitempty"`
 	EmailVerified bool   `json:"email_verified"`
+	Role          string `json:"role"`
 	DisplayName   string `json:"display_name"`
 	IsPublic      bool   `json:"is_public"`
 	AvatarURL     string `json:"avatar_url"`

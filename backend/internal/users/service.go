@@ -104,9 +104,14 @@ func (s *Service) GetPublicProfile(ctx context.Context, userID uuid.UUID) (Publi
 }
 
 func userToMe(u User, cfg Config) MeResponse {
+	role := u.Role
+	if role == "" {
+		role = RoleMember
+	}
 	out := MeResponse{
 		ID:            u.ID.String(),
 		EmailVerified: u.EmailVerified,
+		Role:          role,
 		DisplayName:   u.DisplayName,
 		IsPublic:      u.IsPublic,
 		AvatarURL:     resolveAvatarURL(u.AvatarURL, cfg),

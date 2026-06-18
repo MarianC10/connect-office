@@ -29,8 +29,9 @@ type Location struct {
 	Country     string    `gorm:"column:country;type:text;not null"`
 	Latitude    float64   `gorm:"column:latitude;type:double precision;not null"`
 	Longitude   float64   `gorm:"column:longitude;type:double precision;not null"`
-	Capacity    int       `gorm:"column:capacity;type:integer;not null;default:40"`
-	Images      []LocationImage `gorm:"column:images;type:jsonb;serializer:json;not null;default:'[]'"`
+	Capacity    int        `gorm:"column:capacity;type:integer;not null;default:40"`
+	OwnerID     *uuid.UUID `gorm:"column:owner_id;type:uuid"`
+	Images      LocationImageList `gorm:"column:images;type:jsonb;not null;default:'[]'"`
 	CreatedAt   time.Time `gorm:"column:created_at;type:timestamptz;not null;autoCreateTime"`
 	UpdatedAt   time.Time `gorm:"column:updated_at;type:timestamptz;not null;autoUpdateTime"`
 

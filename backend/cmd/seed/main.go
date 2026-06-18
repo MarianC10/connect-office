@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -120,6 +121,66 @@ ON CONFLICT (user_id, booking_date) DO UPDATE SET
 	}
 
 	return bookingDate, nil
+}
+
+func displayNameFromEmail(email string) string {
+	local := strings.TrimSpace(strings.Split(email, "@")[0])
+	if local == "" {
+		return "Owner"
+	}
+	return local
+}
+
+func resolveSeedOwner(ctx context.Context, tx pgx.Tx) (uuid.UUID, string, string, error) {
+	email := strings.TrimSpace(os.Getenv("SEED_OWNER_EMAIL"))
+	if email == "" {
+		return devtest.OwnerUserID, devtest.OwnerUserEmail, devtest.OwnerUserName, nil
+	}
+
+	name := strings.TrimSpace(os.Getenv("SEED_OWNER_DISPLAY_NAME"))
+	if name == "" {
+		name = displayNameFromEmail(email)
+	}
+
+	idStr := strings.TrimSpace(os.Getenv("SEED_OWNER_USER_ID"))
+	if idStr != "" {
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			return uuid.Nil, "", "", fmt.Errorf("invalid SEED_OWNER_USER_ID: %w", err)
+		}
+		return id, email, name, nil
+	}
+
+	var existingID uuid.UUID
+	err := tx.QueryRow(ctx, `SELECT id FROM users WHERE LOWER(email) = LOWER($1)`, email).Scan(&existingID)
+	if err == nil {
+		return existingID, email, name, nil
+	}
+	if errors.Is(err, pgx.ErrNoRows) {
+		return uuid.Nil, "", "", fmt.Errorf(
+			"set SEED_OWNER_USER_ID to your Supabase user UUID (Dashboard → Authentication → Users → %s); required when the user is not in Postgres yet",
+			email,
+		)
+	}
+	return uuid.Nil, "", "", fmt.Errorf("lookup owner by email: %w", err)
+}
+
+func seedOwnerUser(ctx context.Context, tx pgx.Tx, ownerID uuid.UUID, email, name string) error {
+	_, err := tx.Exec(ctx, `
+INSERT INTO users (id, email, email_verified, display_name, is_public, role)
+VALUES ($1, $2, true, $3, true, 'owner')
+ON CONFLICT (id) DO UPDATE SET
+	email = EXCLUDED.email,
+	email_verified = EXCLUDED.email_verified,
+	display_name = EXCLUDED.display_name,
+	is_public = EXCLUDED.is_public,
+	role = 'owner',
+	updated_at = now()`,
+		ownerID, email, name)
+	if err != nil {
+		return fmt.Errorf("upsert owner user: %w", err)
+	}
+	return nil
 }
 
 type seedAmenity struct {
@@ -287,6 +348,15 @@ func main() {
 		log.Fatalf("truncate: %v", err)
 	}
 
+	ownerID, ownerEmail, ownerName, err := resolveSeedOwner(ctx, tx)
+	if err != nil {
+		log.Fatalf("resolve seed owner: %v", err)
+	}
+
+	if err := seedOwnerUser(ctx, tx, ownerID, ownerEmail, ownerName); err != nil {
+		log.Fatalf("seed owner user: %v", err)
+	}
+
 	for _, loc := range locationsSeed {
 		imagesJSON, err := marshalLocationImages(loc.Images, staticBase)
 		if err != nil {
@@ -294,9 +364,9 @@ func main() {
 		}
 
 		_, err = tx.Exec(ctx, `
-INSERT INTO locations (id, name, description, address, city, county, country, latitude, longitude, capacity, images)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb)`,
-			loc.ID, loc.Name, loc.Description, loc.Address, loc.City, loc.County, loc.Country, loc.Latitude, loc.Longitude, loc.Capacity, imagesJSON)
+INSERT INTO locations (id, name, description, address, city, county, country, latitude, longitude, capacity, images, owner_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12)`,
+			loc.ID, loc.Name, loc.Description, loc.Address, loc.City, loc.County, loc.Country, loc.Latitude, loc.Longitude, loc.Capacity, imagesJSON, ownerID)
 		if err != nil {
 			log.Fatalf("insert location %s: %v", loc.Name, err)
 		}
@@ -352,4 +422,8 @@ ON CONFLICT (plan_type) DO UPDATE SET
 
 	fmt.Println("seed completed:", len(locationsSeed), "locations,", len(amenitiesSeed), "amenities,", len(locationAmenitiesSeed), "links,", len(subscriptionPlansSeed), "subscription plans")
 	fmt.Printf("test user: %s (%s, public) booked at Cluj on %s\n", testUserEmail, testUserID, bookingDate.Format("2006-01-02"))
+	fmt.Printf("owner user: %s (%s, role=owner) owns all %d locations\n", ownerEmail, ownerID, len(locationsSeed))
+	if strings.TrimSpace(os.Getenv("SEED_OWNER_EMAIL")) == "" {
+		fmt.Println("for mobile login as owner: create Supabase user with email", ownerEmail, "and User ID", ownerID)
+	}
 }

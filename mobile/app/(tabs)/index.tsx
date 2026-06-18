@@ -27,6 +27,7 @@ import { useFocusEffect, useScrollToTop } from "@react-navigation/native";
 
 import { getAccessToken } from "@/lib/api";
 import { API_BASE_URL } from "@/lib/env";
+import { geocodeLocation, type NominatimResult } from "@/lib/geocoding";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const CARD_WIDTH = SCREEN_WIDTH * 0.44;
@@ -66,14 +67,6 @@ interface MapMarkerData {
   id: string;
   title: string;
   coordinate: { latitude: number; longitude: number };
-}
-
-interface NominatimResult {
-  place_id: number;
-  display_name: string;
-  lat: string;
-  lon: string;
-  type: string;
 }
 
 // ─── Design tokens ────────────────────────────────────────────────────────────
@@ -147,18 +140,6 @@ function useLocations() {
   }, []);
 
   return { locations, loading, error };
-}
-
-// ─── Nominatim geocoder (free, no API key) ────────────────────────────────────
-
-async function geocodeLocation(query: string): Promise<NominatimResult[]> {
-  const encoded = encodeURIComponent(query);
-  const url = `https://nominatim.openstreetmap.org/search?q=${encoded}&format=json&limit=5&addressdetails=1`;
-  const res = await fetch(url, {
-    headers: { "Accept-Language": "en", "User-Agent": "ConnectOfficeApp/1.0" },
-  });
-  if (!res.ok) throw new Error("Geocode request failed");
-  return res.json();
 }
 
 // ─── Shared office markers rendered on MapView ────────────────────────────────

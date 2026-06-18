@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -9,11 +9,16 @@ import {
   ScrollView,
   StatusBar,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
+import { useFocusEffect } from "@react-navigation/native";
+
+import { OwnerBottomBar } from "@/components/owner-bottom-bar";
+import { fetchOwnerLocations } from "@/lib/owner";
 
 const BG_IMAGE = require("../../assets/images/login_signup_background.jpg");
 
@@ -30,30 +35,42 @@ export type OwnerLocation = {
   name: string;
   city: string;
   bookingsCount: number;
-  /** Optional photo for the location. Falls back to a placeholder image if omitted. */
   imageUrl?: string;
 };
 
-export type OwnerLocationsScreenProps = {
-  /** TODO: wire up to e.g. `useOwnerLocations()` */
-  locations?: OwnerLocation[];
-};
-
-// Fallback image used for any location that doesn't have its own `imageUrl`.
-// TODO: once locations have real photos coming from the backend, this is
-// only needed as a last-resort fallback (e.g. location has no photo yet).
 const PLACEHOLDER_LOCATION_IMAGE =
   "https://images.unsplash.com/photo-1497366754035-f200968a6e72?q=80&w=600&auto=format&fit=crop";
 
-const PLACEHOLDER_LOCATIONS: OwnerLocation[] = [
-  { id: "1", name: "Office name", city: "Cluj-Napoca", bookingsCount: 5 },
-  { id: "2", name: "Office name", city: "Cluj-Napoca", bookingsCount: 5 },
-  { id: "3", name: "Office name", city: "Cluj-Napoca", bookingsCount: 5 },
-];
+export default function OwnerLocationsScreen() {
+  const [locations, setLocations] = useState<OwnerLocation[]>([]);
+  const [loading, setLoading] = useState(true);
 
-export default function OwnerLocationsScreen({
-  locations = PLACEHOLDER_LOCATIONS,
-}: OwnerLocationsScreenProps) {
+  const loadLocations = useCallback(async () => {
+    setLoading(true);
+    try {
+      const items = await fetchOwnerLocations();
+      setLocations(
+        items.map((loc) => ({
+          id: loc.id,
+          name: loc.name,
+          city: loc.city,
+          bookingsCount: loc.booking_count,
+          imageUrl: loc.image_url,
+        }))
+      );
+    } catch {
+      setLocations([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadLocations();
+    }, [loadLocations])
+  );
+
   return (
     <ImageBackground source={BG_IMAGE} style={styles.background} resizeMode="cover">
       <StatusBar barStyle="light-content" />
@@ -85,10 +102,15 @@ export default function OwnerLocationsScreen({
             </TouchableOpacity>
 
             <View style={styles.locationsList}>
-              {/* TODO: backend - owner's list of locations */}
-              {locations.map((location) => (
-                <LocationCard key={location.id} location={location} />
-              ))}
+              {loading ? (
+                <ActivityIndicator color="#fff" style={{ marginTop: 24 }} />
+              ) : locations.length === 0 ? (
+                <Text style={styles.emptyText}>No locations yet.</Text>
+              ) : (
+                locations.map((location) => (
+                  <LocationCard key={location.id} location={location} />
+                ))
+              )}
             </View>
           </ScrollView>
           <OwnerBottomBar />
@@ -130,52 +152,6 @@ function LocationCard({ location }: { location: OwnerLocation }) {
           </TouchableOpacity>
         </View>
       </View>
-    </View>
-  );
-}
-
-function OwnerBottomBar() {
-  return (
-    <View style={styles.bottomBarWrapper}>
-      <BlurView intensity={70} tint="light" style={styles.bottomBar}>
-        <TouchableOpacity
-          activeOpacity={0.75}
-          style={styles.bottomItem}
-          onPress={() => router.push("/owner" as any)}
-        >
-          <Ionicons name="home-outline" size={25} color="#000" />
-        </TouchableOpacity>
-
-        <View style={styles.bottomDivider} />
-
-        <TouchableOpacity
-          activeOpacity={0.75}
-          style={styles.bottomItem}
-          onPress={() => router.push("/owner/bookings" as any)}
-        >
-          <Ionicons name="calendar-outline" size={25} color="#000" />
-        </TouchableOpacity>
-
-        <View style={styles.bottomDivider} />
-
-        <TouchableOpacity
-          activeOpacity={0.75}
-          style={[styles.bottomItem, styles.bottomItemActive]}
-          onPress={() => router.push("/owner/locations" as any)}
-        >
-          <MaterialCommunityIcons name="map-marker-outline" size={26} color="#000" />
-        </TouchableOpacity>
-
-        <View style={styles.bottomDivider} />
-
-        <TouchableOpacity
-          activeOpacity={0.75}
-          style={styles.bottomItem}
-          onPress={() => router.push("/owner/settings" as any)}
-        >
-          <Ionicons name="people-outline" size={27} color="#000" />
-        </TouchableOpacity>
-      </BlurView>
     </View>
   );
 }
@@ -262,6 +238,13 @@ const styles = StyleSheet.create({
 
   locationsList: {
     gap: 14,
+  },
+
+  emptyText: {
+    color: "#ddd",
+    textAlign: "center",
+    marginTop: 8,
+    fontSize: 15,
   },
 
   locationCard: {

@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
 import { HapticTab } from "@/components/haptic-tab";
+import { MemberShellGate } from "@/components/role-guard";
 import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
@@ -26,6 +27,7 @@ export default function TabLayout() {
   }, []);
 
   return (
+    <MemberShellGate>
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: Colors[colorScheme ?? "light"].tint,
@@ -76,18 +78,8 @@ export default function TabLayout() {
         }}
       />
 
-      {/* Owner Dashboard */}
-      <Tabs.Screen
-        name="owner-tab"
-        options={{
-          title: "Owner",
-          tabBarIcon: ({ color, focused }) => (
-            <View style={focused ? styles.iconActive : undefined}>
-              <Ionicons name="business-outline" size={24} color={color} />
-            </View>
-          ),
-        }}
-      />
+      {/* Hide owner tab — owners use /owner role-based shell */}
+      <Tabs.Screen name="owner-tab" options={{ href: null }} />
 
       {/* People */}
       {SOCIAL_ENABLED && (
@@ -136,6 +128,7 @@ export default function TabLayout() {
 
 <Tabs.Screen name="edit-location" options={{ href: null }} />
     </Tabs>
+    </MemberShellGate>
   );
 }
 

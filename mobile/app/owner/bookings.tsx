@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -9,21 +9,25 @@ import {
   ScrollView,
   StatusBar,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
+import { useFocusEffect } from "@react-navigation/native";
+
+import { OwnerBottomBar } from "@/components/owner-bottom-bar";
+import {
+  formatBookingChipLabel,
+  formatBookingDateLabel,
+  getBookingWindowDateKeys,
+  todayInBucharest,
+} from "@/lib/bookings";
+import { fetchOwnerBookings, fetchOwnerLocations } from "@/lib/owner";
+import type { OwnerBooking } from "@/lib/owner";
 
 const BG_IMAGE = require("../../assets/images/login_signup_background.jpg");
-
-// ---------------------------------------------------------------------------
-// PLACEHOLDER DATA
-// Everything below is mock data shown when no real data is passed in via
-// props. Once the backend is ready, fetch the real values (e.g. with a hook
-// or a query) in the parent screen / navigator and pass them down as props.
-// Nothing else in this file needs to change.
-// ---------------------------------------------------------------------------
 
 type BookingStatus = "confirmed" | "pending";
 
@@ -31,56 +35,47 @@ export type Booking = {
   id: string;
   officeName: string;
   bookedByEmail: string;
-  /** Already formatted for display, e.g. "12 Jun 2026 - 13 Jun 2026 (2 days)" */
   dates: string;
   status: BookingStatus;
-  /** Optional photo for the office. Falls back to a placeholder image if omitted. */
   imageUrl?: string;
 };
 
-export type OwnerBookingsScreenProps = {
-  /** TODO: wire up to e.g. `useOwnerBookings()` */
-  bookings?: Booking[];
-};
-
-// Fallback image used for any booking that doesn't have its own `imageUrl`.
 const PLACEHOLDER_OFFICE_IMAGE =
   "https://images.unsplash.com/photo-1497366754035-f200968a6e72?q=80&w=600&auto=format&fit=crop";
 
-const PLACEHOLDER_BOOKINGS: Booking[] = [
-  {
-    id: "1",
-    officeName: "Deerling",
-    bookedByEmail: "user_name@gmail.com",
-    dates: "12 Jun 2026 - 13 Jun 2026 (2 days)",
-    status: "confirmed",
-  },
-  {
-    id: "2",
-    officeName: "Office name",
-    bookedByEmail: "user_name@gmail.com",
-    dates: "15 Jun 2026 (1 day)",
-    status: "pending",
-  },
-  {
-    id: "3",
-    officeName: "Office name",
-    bookedByEmail: "user_name@gmail.com",
-    dates: "22 Jun 2026 - 24 Jun 2026 (3 days)",
-    status: "confirmed",
-  },
-];
+export default function OwnerBookingsScreen() {
+  const [selectedDate, setSelectedDate] = useState(todayInBucharest());
+  const [locationFilter, setLocationFilter] = useState<string | null>(null);
+  const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [loading, setLoading] = useState(true);
 
-type TabKey = "all" | "pending";
+  const dateOptions = getBookingWindowDateKeys();
 
-export default function OwnerBookingsScreen({
-  bookings = PLACEHOLDER_BOOKINGS,
-}: OwnerBookingsScreenProps) {
-  const [activeTab, setActiveTab] = useState<TabKey>("all");
-  // TODO: once bookings come from the backend, this filtering can stay
-  // client-side (small list) or be swapped for a server-side filtered query.
-  const visibleBookings =
-    activeTab === "all" ? bookings : bookings.filter((b) => b.status === "pending");
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [locs, items] = await Promise.all([
+        fetchOwnerLocations(),
+        fetchOwnerBookings({
+          date: selectedDate,
+          locationId: locationFilter ?? undefined,
+        }),
+      ]);
+      setLocations(locs.map((l) => ({ id: l.id, name: l.name })));
+      setBookings(items.map(mapOwnerBooking));
+    } catch {
+      setBookings([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedDate, locationFilter]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadData();
+    }, [loadData])
+  );
 
   return (
     <ImageBackground source={BG_IMAGE} style={styles.background} resizeMode="cover">
@@ -109,34 +104,74 @@ export default function OwnerBookingsScreen({
             </View>
 
             <View style={styles.tabsRow}>
-              <TouchableOpacity
-                activeOpacity={0.75}
-                style={styles.tabButton}
-                onPress={() => setActiveTab("all")}
-              >
-                <Text style={[styles.tabText, activeTab === "all" && styles.tabTextActive]}>
-                  All Bookings
-                </Text>
-                {activeTab === "all" && <View style={styles.tabIndicator} />}
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                activeOpacity={0.75}
-                style={styles.tabButton}
-                onPress={() => setActiveTab("pending")}
-              >
-                <Text style={[styles.tabText, activeTab === "pending" && styles.tabTextActive]}>
-                  Pending
-                </Text>
-                {activeTab === "pending" && <View style={styles.tabIndicator} />}
-              </TouchableOpacity>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                {dateOptions.map((dateKey) => (
+                  <TouchableOpacity
+                    key={dateKey}
+                    activeOpacity={0.75}
+                    style={[
+                      styles.dateChip,
+                      selectedDate === dateKey && styles.dateChipActive,
+                    ]}
+                    onPress={() => setSelectedDate(dateKey)}
+                  >
+                    <Text
+                      style={[
+                        styles.dateChipText,
+                        selectedDate === dateKey && styles.dateChipTextActive,
+                      ]}
+                    >
+                      {formatBookingChipLabel(dateKey)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </View>
 
+            {locations.length > 1 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.filterRow}
+              >
+                <TouchableOpacity
+                  style={[
+                    styles.filterChip,
+                    locationFilter === null && styles.filterChipActive,
+                  ]}
+                  onPress={() => setLocationFilter(null)}
+                >
+                  <Text style={styles.filterChipText}>All locations</Text>
+                </TouchableOpacity>
+                {locations.map((loc) => (
+                  <TouchableOpacity
+                    key={loc.id}
+                    style={[
+                      styles.filterChip,
+                      locationFilter === loc.id && styles.filterChipActive,
+                    ]}
+                    onPress={() => setLocationFilter(loc.id)}
+                  >
+                    <Text style={styles.filterChipText} numberOfLines={1}>
+                      {loc.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+
             <View style={styles.bookingsList}>
-              {/* TODO: backend - owner's bookings, filtered by the active tab */}
-              {visibleBookings.map((booking) => (
-                <BookingCard key={booking.id} booking={booking} />
-              ))}
+              {loading ? (
+                <ActivityIndicator color="#fff" style={{ marginTop: 24 }} />
+              ) : bookings.length === 0 ? (
+                <Text style={styles.emptyText}>
+                  No bookings on {formatBookingDateLabel(selectedDate)}.
+                </Text>
+              ) : (
+                bookings.map((booking) => (
+                  <BookingCard key={booking.id} booking={booking} />
+                ))
+              )}
             </View>
           </ScrollView>
 
@@ -145,6 +180,17 @@ export default function OwnerBookingsScreen({
       </SafeAreaView>
     </ImageBackground>
   );
+}
+
+function mapOwnerBooking(b: OwnerBooking): Booking {
+  return {
+    id: b.id,
+    officeName: b.location_name,
+    bookedByEmail: b.renter_email || b.renter_name,
+    dates: formatBookingDateLabel(b.booking_date),
+    status: b.status === "confirmed" ? "confirmed" : "pending",
+    imageUrl: b.location_image_url,
+  };
 }
 
 function BookingCard({ booking }: { booking: Booking }) {
@@ -195,52 +241,6 @@ function BookingCard({ booking }: { booking: Booking }) {
           </View>
         </View>
       </View>
-    </View>
-  );
-}
-
-function OwnerBottomBar() {
-  return (
-    <View style={styles.bottomBarWrapper}>
-      <BlurView intensity={70} tint="light" style={styles.bottomBar}>
-        <TouchableOpacity
-          activeOpacity={0.75}
-          style={styles.bottomItem}
-          onPress={() => router.push("/owner" as any)}
-        >
-          <Ionicons name="home-outline" size={25} color="#000" />
-        </TouchableOpacity>
-
-        <View style={styles.bottomDivider} />
-
-        <TouchableOpacity
-          activeOpacity={0.75}
-          style={[styles.bottomItem, styles.bottomItemActive]}
-          onPress={() => router.push("/owner/bookings" as any)}
-        >
-          <Ionicons name="calendar-outline" size={25} color="#000" />
-        </TouchableOpacity>
-
-        <View style={styles.bottomDivider} />
-
-        <TouchableOpacity
-          activeOpacity={0.75}
-          style={styles.bottomItem}
-          onPress={() => router.push("/owner/locations" as any)}
-        >
-          <MaterialCommunityIcons name="map-marker-outline" size={26} color="#000" />
-        </TouchableOpacity>
-
-        <View style={styles.bottomDivider} />
-
-        <TouchableOpacity
-          activeOpacity={0.75}
-          style={styles.bottomItem}
-          onPress={() => router.push("/owner/settings" as any)}
-        >
-          <Ionicons name="people-outline" size={27} color="#000" />
-        </TouchableOpacity>
-      </BlurView>
     </View>
   );
 }
@@ -307,40 +307,59 @@ const styles = StyleSheet.create({
   },
 
   tabsRow: {
-    flexDirection: "row",
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.25)",
-    marginBottom: 16,
+    marginBottom: 12,
   },
 
-  tabButton: {
-    flex: 1,
-    alignItems: "center",
-    paddingBottom: 10,
+  dateChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    marginRight: 8,
   },
 
-  tabText: {
-    color: "#B9B9B9",
-    fontSize: 15,
+  dateChipActive: {
+    backgroundColor: "rgba(255,255,255,0.85)",
+  },
+
+  dateChipText: {
+    color: "#ddd",
+    fontSize: 13,
     fontWeight: "700",
-    fontFamily: Platform.select({
-      ios: "Georgia",
-      android: "serif",
-      default: "serif",
-    }),
   },
 
-  tabTextActive: {
-    color: "#F5F5F5",
+  dateChipTextActive: {
+    color: "#132457",
   },
 
-  tabIndicator: {
-    position: "absolute",
-    bottom: -1,
-    height: 2,
-    width: "70%",
-    borderRadius: 2,
-    backgroundColor: "#10185B",
+  filterRow: {
+    marginBottom: 14,
+  },
+
+  filterChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    marginRight: 8,
+    maxWidth: 180,
+  },
+
+  filterChipActive: {
+    backgroundColor: "rgba(16,24,91,0.85)",
+  },
+
+  filterChipText: {
+    color: "#f2f2f2",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+
+  emptyText: {
+    color: "#ddd",
+    textAlign: "center",
+    marginTop: 24,
+    fontSize: 15,
   },
 
   bookingsList: {
@@ -441,39 +460,5 @@ const styles = StyleSheet.create({
 
   pendingText: {
     color: "#9B6400",
-  },
-
-  bottomBarWrapper: {
-    position: "absolute",
-    left: 16,
-    right: 16,
-    bottom: 9,
-  },
-
-  bottomBar: {
-    height: 39,
-    borderRadius: 19,
-    overflow: "hidden",
-    backgroundColor: "rgba(255,255,255,0.78)",
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-around",
-  },
-
-  bottomItem: {
-    flex: 1,
-    height: 39,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-
-  bottomItemActive: {
-    backgroundColor: "rgba(255,255,255,0.32)",
-  },
-
-  bottomDivider: {
-    width: 1,
-    height: 25,
-    backgroundColor: "rgba(255,255,255,0.55)",
   },
 });

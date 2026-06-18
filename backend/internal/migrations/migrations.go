@@ -301,6 +301,26 @@ var All = []Migration{
 			return nil
 		},
 	},
+	{
+		ID:          "0012_owner_locations",
+		Description: "Add user role and location ownership",
+		Up: func(ctx context.Context, tx *gorm.DB) error {
+			statements := []string{
+				`ALTER TABLE users
+				ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'member'
+					CHECK (role IN ('member', 'owner'))`,
+				`ALTER TABLE locations
+				ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES users (id)`,
+				`CREATE INDEX IF NOT EXISTS locations_owner_id_idx ON locations (owner_id)`,
+			}
+			for _, stmt := range statements {
+				if err := tx.WithContext(ctx).Exec(stmt).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
 }
 
 func Run(ctx context.Context, db *gorm.DB) error {
