@@ -77,7 +77,6 @@ export default function OwnerBookingsScreen({
   bookings = PLACEHOLDER_BOOKINGS,
 }: OwnerBookingsScreenProps) {
   const [activeTab, setActiveTab] = useState<TabKey>("all");
-
   // TODO: once bookings come from the backend, this filtering can stay
   // client-side (small list) or be swapped for a server-side filtered query.
   const visibleBookings =

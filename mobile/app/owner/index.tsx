@@ -270,7 +270,7 @@ function OwnerBottomBar() {
         <TouchableOpacity
           activeOpacity={0.75}
           style={styles.bottomItem}
-          onPress={() => router.push("/owner/settings" as any)}
+          onPress={() => router.push("/owner/profile" as any)}
         >
           <Ionicons name="people-outline" size={27} color="#000" />
         </TouchableOpacity>
