@@ -34,6 +34,8 @@ import (
 
 	"github.com/MarianC10/connect-office/backend/internal/migrations"
 
+	"github.com/MarianC10/connect-office/backend/internal/owner"
+
 	"github.com/MarianC10/connect-office/backend/internal/platform/auth"
 
 	"github.com/MarianC10/connect-office/backend/internal/social"
@@ -238,6 +240,14 @@ func main() {
 
 
 
+	ownerCfg := owner.LoadConfigFromEnv()
+
+	ownerStore := owner.NewPostgresStore(db)
+
+	ownerSvc := owner.NewService(ownerStore, userStore, ownerCfg)
+
+
+
 	srv := &http.Server{
 
 		Addr:              ":8080",
@@ -313,6 +323,12 @@ func main() {
 	http.Handle("/subscriptions/checkout-return", http.HandlerFunc(subscriptions.NewCheckoutReturnHandler(subCfg)))
 
 	http.Handle("/subscriptions/webhook", http.HandlerFunc(subscriptions.NewWebhookHandler(subSvc)))
+
+
+
+	http.Handle("/amenities", auth.Middleware(verifier, http.HandlerFunc(owner.NewAmenitiesHandler(ownerSvc))))
+
+	http.Handle("/owner/", auth.Middleware(verifier, http.HandlerFunc(owner.NewOwnerRouter(ownerSvc))))
 
 
 

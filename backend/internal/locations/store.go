@@ -54,7 +54,7 @@ func (p *PostgresStore) GetLocationByID(ctx context.Context, id string) (Locatio
 
 func locationToResponse(loc Location) LocationResponse {
 	images := make([]LocationImageResponse, 0, len(loc.Images))
-	for _, img := range loc.Images {
+	for _, img := range loc.Images.Slice() {
 		images = append(images, LocationImageResponse{
 			ID:  img.ID,
 			URL: img.URL,

@@ -5,6 +5,7 @@ export type MeProfile = {
   id: string;
   email?: string;
   email_verified: boolean;
+  role: "member" | "owner";
   display_name: string;
   is_public: boolean;
   avatar_url: string;
@@ -23,7 +24,11 @@ export async function fetchMe(): Promise<MeProfile> {
     const text = await res.text();
     throw new Error(text || `HTTP ${res.status}`);
   }
-  return res.json();
+  const data = await res.json();
+  return {
+    ...data,
+    role: data.role === "owner" ? "owner" : "member",
+  };
 }
 
 export async function updateMe(body: {

@@ -58,6 +58,7 @@ func TestService_Me_mapsUser(t *testing.T) {
 			ID:            uid,
 			Email:         &email,
 			EmailVerified: true,
+			Role:          RoleMember,
 			DisplayName:   "c",
 		},
 	}
@@ -67,7 +68,7 @@ func TestService_Me_mapsUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if me.ID != uid.String() || me.Email != "c@example.com" || !me.EmailVerified {
+	if me.ID != uid.String() || me.Email != "c@example.com" || !me.EmailVerified || me.Role != RoleMember {
 		t.Fatalf("%+v", me)
 	}
 	if fs.last.UserID != uid {

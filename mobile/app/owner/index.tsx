@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useState } from "react";
 import {
   View,
   Text,
@@ -9,11 +9,19 @@ import {
   ScrollView,
   StatusBar,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
+import { useFocusEffect } from "@react-navigation/native";
+
+import { OwnerBottomBar } from "@/components/owner-bottom-bar";
+import { formatBookingDateLabel, todayInBucharest } from "@/lib/bookings";
+import { fetchMe } from "@/lib/profile";
+import { fetchOwnerBookings, fetchOwnerLocations } from "@/lib/owner";
+import type { OwnerBooking } from "@/lib/owner";
 
 const BG_IMAGE = require("../../assets/images/login_signup_background.jpg");
 
@@ -33,61 +41,51 @@ export type RecentBooking = {
   date: string;
   userName: string;
   status: BookingStatus;
-  /** Optional photo for the office. Falls back to a placeholder image if omitted. */
   imageUrl?: string;
 };
 
-export type OwnerDashboardScreenProps = {
-  /** TODO: wire up to e.g. `useOwnerProfile().firstName` */
-  ownerName?: string;
-  /** TODO: wire up to e.g. `useOwnerStats().locationsCount` */
-  locationsCount?: number;
-  /** TODO: wire up to e.g. `useOwnerStats().bookingsCount` */
-  bookingsCount?: number;
-  /** TODO: wire up to e.g. `useRecentBookings({ limit: 3 })` */
-  recentBookings?: RecentBooking[];
-};
-
-// Fallback image used for any booking that doesn't have its own `imageUrl`.
-// TODO: once offices have real photos coming from the backend, this is only
-// needed as a last-resort fallback (e.g. office has no photo uploaded yet).
 const PLACEHOLDER_OFFICE_IMAGE =
   "https://images.unsplash.com/photo-1497366754035-f200968a6e72?q=80&w=600&auto=format&fit=crop";
 
-const PLACEHOLDER_OWNER_NAME = "owner name";
-const PLACEHOLDER_LOCATIONS_COUNT = 3;
-const PLACEHOLDER_BOOKINGS_COUNT = 12;
+export default function OwnerDashboardScreen() {
+  const [ownerName, setOwnerName] = useState("");
+  const [locationsCount, setLocationsCount] = useState(0);
+  const [bookingsCount, setBookingsCount] = useState(0);
+  const [recentBookings, setRecentBookings] = useState<RecentBooking[]>([]);
+  const [loading, setLoading] = useState(true);
 
-const PLACEHOLDER_RECENT_BOOKINGS: RecentBooking[] = [
-  {
-    id: "1",
-    officeName: "Office name",
-    date: "07.08.2026",
-    userName: "user_name",
-    status: "confirmed",
-  },
-  {
-    id: "2",
-    officeName: "Office name",
-    date: "07.08.2026",
-    userName: "user_name",
-    status: "pending",
-  },
-  {
-    id: "3",
-    officeName: "Office name",
-    date: "07.08.2026",
-    userName: "user_name",
-    status: "confirmed",
-  },
-];
+  const loadDashboard = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [me, locations, bookings] = await Promise.all([
+        fetchMe(),
+        fetchOwnerLocations(),
+        fetchOwnerBookings({ date: todayInBucharest() }),
+      ]);
+      setOwnerName(me.display_name);
+      setLocationsCount(locations.length);
+      setBookingsCount(
+        locations.reduce((sum, loc) => sum + loc.booking_count, 0)
+      );
+      setRecentBookings(
+        bookings.slice(0, 3).map((b) => mapOwnerBooking(b))
+      );
+    } catch {
+      setOwnerName("");
+      setLocationsCount(0);
+      setBookingsCount(0);
+      setRecentBookings([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-export default function OwnerDashboardScreen({
-  ownerName = PLACEHOLDER_OWNER_NAME,
-  locationsCount = PLACEHOLDER_LOCATIONS_COUNT,
-  bookingsCount = PLACEHOLDER_BOOKINGS_COUNT,
-  recentBookings = PLACEHOLDER_RECENT_BOOKINGS,
-}: OwnerDashboardScreenProps) {
+  useFocusEffect(
+    useCallback(() => {
+      void loadDashboard();
+    }, [loadDashboard])
+  );
+
   return (
     <ImageBackground source={BG_IMAGE} style={styles.background} resizeMode="cover">
       <StatusBar barStyle="light-content" />
@@ -102,10 +100,15 @@ export default function OwnerDashboardScreen({
           >
             <View style={styles.header}>
               <Text style={styles.welcome}>Welcome back,</Text>
-              {/* TODO: backend - owner's display name */}
-              <Text style={styles.ownerName}>{ownerName}.</Text>
+              <Text style={styles.ownerName}>
+                {loading ? "..." : ownerName || "Owner"}.
+              </Text>
             </View>
 
+            {loading ? (
+              <ActivityIndicator color="#fff" style={{ marginVertical: 24 }} />
+            ) : (
+              <>
             <View style={styles.statsRow}>
               <StatCard
                 icon={
@@ -115,7 +118,6 @@ export default function OwnerDashboardScreen({
                     color="#000"
                   />
                 }
-                // TODO: backend - total number of locations owned
                 value={String(locationsCount)}
                 label="locations"
               />
@@ -128,9 +130,8 @@ export default function OwnerDashboardScreen({
                     color="#000"
                   />
                 }
-                // TODO: backend - total number of bookings
                 value={String(bookingsCount)}
-                label="bookings"
+                label="bookings today"
               />
             </View>
 
@@ -154,11 +155,16 @@ export default function OwnerDashboardScreen({
             </View>
 
             <View style={styles.bookingsList}>
-              {/* TODO: backend - list of the owner's most recent bookings */}
-              {recentBookings.map((booking) => (
-                <BookingCard key={booking.id} booking={booking} />
-              ))}
+              {recentBookings.length === 0 ? (
+                <Text style={styles.emptyText}>No bookings for today yet.</Text>
+              ) : (
+                recentBookings.map((booking) => (
+                  <BookingCard key={booking.id} booking={booking} />
+                ))
+              )}
             </View>
+              </>
+            )}
           </ScrollView>
 
           <OwnerBottomBar />
@@ -166,6 +172,17 @@ export default function OwnerDashboardScreen({
       </SafeAreaView>
     </ImageBackground>
   );
+}
+
+function mapOwnerBooking(b: OwnerBooking): RecentBooking {
+  return {
+    id: b.id,
+    officeName: b.location_name,
+    date: formatBookingDateLabel(b.booking_date),
+    userName: b.renter_name,
+    status: b.status === "confirmed" ? "confirmed" : "pending",
+    imageUrl: b.location_image_url,
+  };
 }
 
 function StatCard({
@@ -230,52 +247,6 @@ function BookingCard({ booking }: { booking: RecentBooking }) {
         </View>
       </View>
     </TouchableOpacity>
-  );
-}
-
-function OwnerBottomBar() {
-  return (
-    <View style={styles.bottomBarWrapper}>
-      <BlurView intensity={70} tint="light" style={styles.bottomBar}>
-        <TouchableOpacity
-          activeOpacity={0.75}
-          style={styles.bottomItem}
-          onPress={() => router.push("/owner" as any)}
-        >
-          <Ionicons name="home-outline" size={25} color="#000" />
-        </TouchableOpacity>
-
-        <View style={styles.bottomDivider} />
-
-        <TouchableOpacity
-          activeOpacity={0.75}
-          style={styles.bottomItem}
-          onPress={() => router.push("/owner/bookings" as any)}
-        >
-          <Ionicons name="calendar-outline" size={25} color="#000" />
-        </TouchableOpacity>
-
-        <View style={styles.bottomDivider} />
-
-        <TouchableOpacity
-          activeOpacity={0.75}
-          style={[styles.bottomItem, styles.bottomItemActive]}
-          onPress={() => router.push("/owner/locations" as any)}
-        >
-          <MaterialCommunityIcons name="map-marker-outline" size={26} color="#000" />
-        </TouchableOpacity>
-
-        <View style={styles.bottomDivider} />
-
-        <TouchableOpacity
-          activeOpacity={0.75}
-          style={styles.bottomItem}
-          onPress={() => router.push("/owner/profile" as any)}
-        >
-          <Ionicons name="people-outline" size={27} color="#000" />
-        </TouchableOpacity>
-      </BlurView>
-    </View>
   );
 }
 
@@ -449,6 +420,13 @@ const styles = StyleSheet.create({
 
   bookingsList: {
     gap: 9,
+  },
+
+  emptyText: {
+    color: "#ddd",
+    textAlign: "center",
+    marginTop: 8,
+    fontSize: 15,
   },
 
   bookingCard: {

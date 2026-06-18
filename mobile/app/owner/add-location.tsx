@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Dimensions,
   ImageBackground,
@@ -12,11 +12,21 @@ import {
   View,
   Alert,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+
+import { LocationPickerMap, type LocationPickerValue } from '@/components/location-picker-map';
+import { matchCountryOption } from '@/lib/geocoding';
+import {
+  createOwnerLocation,
+  fetchAmenities,
+  uploadOwnerLocationImage,
+  type AmenityCatalogItem,
+} from '@/lib/owner';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -26,11 +36,6 @@ const COUNTRIES = [
   'Romania', 'Germany', 'France', 'Italy', 'Spain', 'Netherlands',
   'Belgium', 'Austria', 'Poland', 'Czech Republic', 'Hungary', 'Portugal',
   'Sweden', 'Denmark', 'Norway', 'Finland', 'Switzerland', 'Greece',
-];
-
-const AMENITIES = [
-  'Wi-Fi', 'Parking', 'Coffee', 'Meeting Room',
-  'Air Conditioning', 'Printer', 'Kitchen', '24/7 Access',
 ];
 
 const C = {
@@ -70,18 +75,27 @@ export default function AddLocationScreen() {
 
   const [descriptionFocused, setDescriptionFocused] = useState(false);
   const [countryPickerVisible, setCountryPickerVisible] = useState(false);
-  const [images, setImages] = useState<string[]>([]);
-  const [selectedAmenities, setSelectedAmenities] = useState<string[]>([]);
+  const [pendingImages, setPendingImages] = useState<string[]>([]);
+  const [amenities, setAmenities] = useState<AmenityCatalogItem[]>([]);
+  const [selectedAmenityIds, setSelectedAmenityIds] = useState<string[]>([]);
+  const [mapPin, setMapPin] = useState<LocationPickerValue | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetchAmenities()
+      .then(setAmenities)
+      .catch(() => setAmenities([]));
+  }, []);
 
   const updateField = (field: keyof LocationDraft, value: string) => {
     setDraft((current) => ({ ...current, [field]: value }));
   };
 
-  const toggleAmenity = (amenity: string) => {
-    setSelectedAmenities((current) =>
-      current.includes(amenity)
-        ? current.filter((item) => item !== amenity)
-        : [...current, amenity]
+  const toggleAmenity = (amenityId: string) => {
+    setSelectedAmenityIds((current) =>
+      current.includes(amenityId)
+        ? current.filter((item) => item !== amenityId)
+        : [...current, amenityId]
     );
   };
 
@@ -101,19 +115,66 @@ export default function AddLocationScreen() {
 
     if (!result.canceled) {
       const newUris = result.assets.map((a) => a.uri);
-      setImages((current) => [...current, ...newUris]);
+      setPendingImages((current) => [...current, ...newUris]);
     }
   };
 
   const handleRemoveImage = (uri: string) => {
-    setImages((current) => current.filter((img) => img !== uri));
+    setPendingImages((current) => current.filter((img) => img !== uri));
   };
 
-  const handleSave = () => {
-    Alert.alert(
-      'Pentru MARIAN',
-      'The form is ready, but make the database connection :(((((.'
-    );
+  const handleMapPinChange = (pin: LocationPickerValue) => {
+    setMapPin(pin);
+    setDraft((current) => ({
+      ...current,
+      address: pin.address?.trim() ? pin.address : current.address,
+      city: pin.city?.trim() ? pin.city : current.city,
+      county: pin.county?.trim() ? pin.county : current.county,
+      country: pin.country?.trim()
+        ? matchCountryOption(pin.country, COUNTRIES)
+        : current.country,
+    }));
+  };
+
+  const handleSave = async () => {
+    if (!draft.officeName.trim()) {
+      Alert.alert('Missing name', 'Enter an office name.');
+      return;
+    }
+    if (!draft.address.trim() || !draft.city.trim() || !draft.county.trim()) {
+      Alert.alert('Missing address', 'Fill in address, city, and county.');
+      return;
+    }
+    if (!mapPin) {
+      Alert.alert('Missing location', 'Pick a point on the map or search for an address.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const created = await createOwnerLocation({
+        name: draft.officeName.trim(),
+        description: draft.description.trim(),
+        address: draft.address.trim(),
+        city: draft.city.trim(),
+        county: draft.county.trim(),
+        country: draft.country,
+        latitude: mapPin.latitude,
+        longitude: mapPin.longitude,
+        amenity_ids: selectedAmenityIds,
+      });
+
+      for (const uri of pendingImages) {
+        await uploadOwnerLocationImage(created.id, uri);
+      }
+
+      Alert.alert('Created', 'Location added successfully.');
+      router.replace('/owner/locations' as any);
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Could not create location');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -133,6 +194,7 @@ export default function AddLocationScreen() {
           <ScrollView
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled
             contentContainerStyle={styles.scrollContent}
           >
             <View style={styles.headerRow}>
@@ -189,9 +251,9 @@ export default function AddLocationScreen() {
                   <Text style={styles.imageAddText}>Tap to add photos</Text>
                 </TouchableOpacity>
 
-                {images.length > 0 && (
+                {pendingImages.length > 0 && (
                   <View style={styles.imageGrid}>
-                    {images.map((uri) => (
+                    {pendingImages.map((uri) => (
                       <View key={uri} style={styles.imageTileWrapper}>
                         <Image source={{ uri }} style={styles.imageTile} />
                         <TouchableOpacity
@@ -208,6 +270,8 @@ export default function AddLocationScreen() {
               </FormSection>
 
               <FormSection title="Location">
+                <LocationPickerMap value={mapPin} onChange={handleMapPinChange} height={200} />
+
                 <FieldLabel>Address</FieldLabel>
                 <TextInput
                   value={draft.address}
@@ -284,17 +348,17 @@ export default function AddLocationScreen() {
 
               <FormSection title="Amenities" compact>
                 <View style={styles.amenitiesGrid}>
-                  {AMENITIES.map((amenity) => {
-                    const selected = selectedAmenities.includes(amenity);
+                  {amenities.map((amenity) => {
+                    const selected = selectedAmenityIds.includes(amenity.id);
                     return (
                       <TouchableOpacity
-                        key={amenity}
+                        key={amenity.id}
                         activeOpacity={0.78}
                         style={[styles.amenityChip, selected && styles.amenityChipSelected]}
-                        onPress={() => toggleAmenity(amenity)}
+                        onPress={() => toggleAmenity(amenity.id)}
                       >
                         <Text style={[styles.amenityText, selected && styles.amenityTextSelected]}>
-                          {amenity}
+                          {amenity.name}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -306,8 +370,11 @@ export default function AddLocationScreen() {
                 activeOpacity={0.85}
                 style={styles.saveButton}
                 onPress={handleSave}
+                disabled={saving}
               >
-                <Text style={styles.saveButtonText}>Save Location</Text>
+                <Text style={styles.saveButtonText}>
+                  {saving ? 'Saving...' : 'Save Location'}
+                </Text>
               </TouchableOpacity>
 
             </View>

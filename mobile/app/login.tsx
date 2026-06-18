@@ -22,6 +22,7 @@ import {
   usernameFromSupabaseMetadata,
 } from '@/lib/display-name';
 import { fetchMe, updateMe } from '@/lib/profile';
+import { homeRouteForRole } from '@/lib/roles';
 import { supabase } from '@/lib/supabase';
 import { isValidEmail } from '@/utils/validation';
 
@@ -58,22 +59,22 @@ export default function LoginScreen() {
       }
       await syncCurrentUserWithBackend(session.access_token);
 
+      let me = await fetchMe();
       const preferredUsername = usernameFromSupabaseMetadata(
         session.user.user_metadata
       );
       if (preferredUsername.length >= 2) {
         try {
-          const me = await fetchMe();
           const email = me.email ?? trimmed;
           if (isLikelyAutoDisplayName(me.display_name, email)) {
-            await updateMe({ display_name: preferredUsername });
+            me = await updateMe({ display_name: preferredUsername });
           }
         } catch {
           // Non-fatal: user can set display name in profile edit.
         }
       }
 
-      router.replace('/(tabs)');
+      router.replace(homeRouteForRole(me.role));
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       Alert.alert('Could not sync with API', msg);

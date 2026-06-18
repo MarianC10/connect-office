@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
+  ActivityIndicator,
   Dimensions,
   Image,
   ImageBackground,
@@ -14,18 +15,23 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
+
+import {
+  deleteOwnerLocationImage,
+  fetchAmenities,
+  fetchOwnerLocation,
+  updateOwnerLocation,
+  uploadOwnerLocationImage,
+  type AmenityCatalogItem,
+  type LocationImage,
+} from '@/lib/owner';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const BG_IMAGE = require('@/assets/images/login_signup_background.jpg');
-
-const AMENITIES = [
-  'Wi-Fi', 'Parking', 'Coffee', 'Meeting Room',
-  'Air Conditioning', 'Printer', 'Kitchen', '24/7 Access',
-];
 
 const C = {
   glassBgStrong: 'rgba(255, 255, 255, 0.32)',
@@ -48,32 +54,64 @@ type LocationDraft = {
 
 export default function EditLocationScreen() {
   const router = useRouter();
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  const locationId = typeof id === 'string' ? id : '';
 
   const [draft, setDraft] = useState<LocationDraft>({
     officeName: '',
     description: '',
   });
-
-  const [selectedAmenities, setSelectedAmenities] = useState<string[]>([
-    'Wi-Fi', 'Meeting Room',
-  ]);
-
+  const [amenities, setAmenities] = useState<AmenityCatalogItem[]>([]);
+  const [selectedAmenityIds, setSelectedAmenityIds] = useState<string[]>([]);
   const [descriptionFocused, setDescriptionFocused] = useState(false);
-  const [images, setImages] = useState<string[]>([]);
+  const [images, setImages] = useState<LocationImage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!locationId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    try {
+      const [catalog, loc] = await Promise.all([
+        fetchAmenities(),
+        fetchOwnerLocation(locationId),
+      ]);
+      setAmenities(catalog);
+      setDraft({
+        officeName: loc.name,
+        description: loc.description,
+      });
+      setSelectedAmenityIds(loc.amenity_ids);
+      setImages(loc.images ?? []);
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to load location');
+      router.back();
+    } finally {
+      setLoading(false);
+    }
+  }, [locationId, router]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const updateField = (field: keyof LocationDraft, value: string) => {
     setDraft((current) => ({ ...current, [field]: value }));
   };
 
-  const toggleAmenity = (amenity: string) => {
-    setSelectedAmenities((current) =>
-      current.includes(amenity)
-        ? current.filter((item) => item !== amenity)
-        : [...current, amenity]
+  const toggleAmenity = (amenityId: string) => {
+    setSelectedAmenityIds((current) =>
+      current.includes(amenityId)
+        ? current.filter((item) => item !== amenityId)
+        : [...current, amenityId]
     );
   };
 
   const handlePickImages = async () => {
+    if (!locationId) return;
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       Alert.alert('Permission required', 'Please allow access to your photo library.');
@@ -84,25 +122,65 @@ export default function EditLocationScreen() {
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsMultipleSelection: true,
       quality: 0.8,
-      selectionLimit: 20,
+      selectionLimit: 10,
     });
 
     if (!result.canceled) {
-      const newUris = result.assets.map((a) => a.uri);
-      setImages((current) => [...current, ...newUris]);
+      try {
+        for (const asset of result.assets) {
+          const uploaded = await uploadOwnerLocationImage(
+            locationId,
+            asset.uri,
+            asset.mimeType ?? 'image/jpeg'
+          );
+          setImages((current) => [...current, uploaded]);
+        }
+      } catch (e) {
+        Alert.alert('Upload failed', e instanceof Error ? e.message : 'Could not upload image');
+      }
     }
   };
 
-  const handleRemoveImage = (uri: string) => {
-    setImages((current) => current.filter((img) => img !== uri));
+  const handleRemoveImage = async (image: LocationImage) => {
+    if (!locationId) return;
+    try {
+      await deleteOwnerLocationImage(locationId, image.id);
+      setImages((current) => current.filter((img) => img.id !== image.id));
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Could not remove image');
+    }
   };
 
-  const handleSave = () => {
-    Alert.alert(
-      'Pentru MARIAN',
-      'The form is ready, but pretty pretty please connect it to the database.'
-    );
+  const handleSave = async () => {
+    if (!locationId) return;
+    if (!draft.officeName.trim()) {
+      Alert.alert('Missing name', 'Enter an office name.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await updateOwnerLocation(locationId, {
+        name: draft.officeName.trim(),
+        description: draft.description.trim(),
+        amenity_ids: selectedAmenityIds,
+        images,
+      });
+      Alert.alert('Saved', 'Location updated successfully.');
+      router.back();
+    } catch (e) {
+      Alert.alert('Save failed', e instanceof Error ? e.message : 'Could not save');
+    } finally {
+      setSaving(false);
+    }
   };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingWrap}>
+        <ActivityIndicator size="large" color="#132457" />
+      </View>
+    );
+  }
 
   return (
     <ImageBackground
@@ -179,12 +257,12 @@ export default function EditLocationScreen() {
 
                 {images.length > 0 && (
                   <View style={styles.imageGrid}>
-                    {images.map((uri) => (
-                      <View key={uri} style={styles.imageTileWrapper}>
-                        <Image source={{ uri }} style={styles.imageTile} />
+                    {images.map((img) => (
+                      <View key={img.id} style={styles.imageTileWrapper}>
+                        <Image source={{ uri: img.url }} style={styles.imageTile} />
                         <TouchableOpacity
                           style={styles.imageRemoveBtn}
-                          onPress={() => handleRemoveImage(uri)}
+                          onPress={() => handleRemoveImage(img)}
                           activeOpacity={0.8}
                         >
                           <Ionicons name="close-circle" size={20} color={C.white} />
@@ -197,17 +275,17 @@ export default function EditLocationScreen() {
 
               <FormSection title="Amenities" compact>
                 <View style={styles.amenitiesGrid}>
-                  {AMENITIES.map((amenity) => {
-                    const selected = selectedAmenities.includes(amenity);
+                  {amenities.map((amenity) => {
+                    const selected = selectedAmenityIds.includes(amenity.id);
                     return (
                       <TouchableOpacity
-                        key={amenity}
+                        key={amenity.id}
                         activeOpacity={0.78}
                         style={[styles.amenityChip, selected && styles.amenityChipSelected]}
-                        onPress={() => toggleAmenity(amenity)}
+                        onPress={() => toggleAmenity(amenity.id)}
                       >
                         <Text style={[styles.amenityText, selected && styles.amenityTextSelected]}>
-                          {amenity}
+                          {amenity.name}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -219,8 +297,11 @@ export default function EditLocationScreen() {
                 activeOpacity={0.85}
                 style={styles.saveButton}
                 onPress={handleSave}
+                disabled={saving}
               >
-                <Text style={styles.saveButtonText}>Save Changes</Text>
+                <Text style={styles.saveButtonText}>
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </Text>
               </TouchableOpacity>
 
             </View>
@@ -253,6 +334,12 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 }
 
 const styles = StyleSheet.create({
+  loadingWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#111',
+  },
   bgImage: {
     flex: 1,
     width: SCREEN_WIDTH,
