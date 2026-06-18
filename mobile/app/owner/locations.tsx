@@ -91,7 +91,6 @@ export default function OwnerLocationsScreen({
               ))}
             </View>
           </ScrollView>
-
           <OwnerBottomBar />
         </View>
       </SafeAreaView>
