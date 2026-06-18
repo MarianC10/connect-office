@@ -35,7 +35,7 @@ type Store interface {
 	InsertMessage(ctx context.Context, conversationID, senderID uuid.UUID, body string) (Message, error)
 	ListMessages(ctx context.Context, conversationID uuid.UUID, before *uuid.UUID, limit int) ([]Message, error)
 	AreFriends(ctx context.Context, userA, userB uuid.UUID) (bool, error)
-	GetFriendProfile(ctx context.Context, viewerID, friendID uuid.UUID) (FriendProfile, error)
+	GetPeerProfile(ctx context.Context, peerID uuid.UUID) (FriendProfile, error)
 }
 
 type PostgresStore struct {
@@ -53,10 +53,18 @@ func (s *PostgresStore) CreateConversationForPair(ctx context.Context, userA, us
 
 func (s *PostgresStore) CreateConversationForPairTx(tx *gorm.DB, userA, userB uuid.UUID) (Conversation, error) {
 	a, b := CanonicalPair(userA, userB)
+	var existing Conversation
+	err := tx.Where("user_a_id = ? AND user_b_id = ?", a, b).First(&existing).Error
+	if err == nil {
+		return existing, nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return Conversation{}, fmt.Errorf("find conversation: %w", err)
+	}
+
 	conv := Conversation{UserAID: a, UserBID: b, CreatedAt: time.Now().UTC()}
 	if err := tx.Create(&conv).Error; err != nil {
 		if isUniqueViolation(err) {
-			var existing Conversation
 			if findErr := tx.Where("user_a_id = ? AND user_b_id = ?", a, b).First(&existing).Error; findErr != nil {
 				return Conversation{}, fmt.Errorf("find existing conversation: %w", findErr)
 			}
@@ -110,7 +118,7 @@ func (s *PostgresStore) ListConversations(ctx context.Context, userID uuid.UUID)
 		if !ok {
 			continue
 		}
-		friend, err := s.GetFriendProfile(ctx, userID, friendID)
+		friend, err := s.GetPeerProfile(ctx, friendID)
 		if err != nil {
 			return nil, err
 		}
@@ -219,25 +227,17 @@ func (s *PostgresStore) AreFriends(ctx context.Context, userA, userB uuid.UUID) 
 	return count > 0, nil
 }
 
-func (s *PostgresStore) GetFriendProfile(ctx context.Context, viewerID, friendID uuid.UUID) (FriendProfile, error) {
-	friends, err := s.AreFriends(ctx, viewerID, friendID)
-	if err != nil {
-		return FriendProfile{}, err
-	}
-	if !friends {
-		return FriendProfile{}, ErrFriendNotFound
-	}
-
+func (s *PostgresStore) GetPeerProfile(ctx context.Context, peerID uuid.UUID) (FriendProfile, error) {
 	var row struct {
 		ID          uuid.UUID
 		DisplayName string
 		AvatarURL   *string
 	}
-	err = s.db.WithContext(ctx).Raw(`
+	err := s.db.WithContext(ctx).Raw(`
 		SELECT id, display_name, avatar_url FROM users WHERE id = ?
-	`, friendID).Scan(&row).Error
+	`, peerID).Scan(&row).Error
 	if err != nil {
-		return FriendProfile{}, fmt.Errorf("friend profile: %w", err)
+		return FriendProfile{}, fmt.Errorf("peer profile: %w", err)
 	}
 	if row.ID == uuid.Nil {
 		return FriendProfile{}, ErrFriendNotFound

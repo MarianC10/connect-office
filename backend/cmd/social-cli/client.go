@@ -98,6 +98,15 @@ type friendRequest struct {
 	CreatedAt   string `json:"created_at"`
 }
 
+type outgoingFriendRequest struct {
+	ID          string `json:"id"`
+	ToUserID    string `json:"to_user_id"`
+	ToEmail     string `json:"to_email"`
+	DisplayName string `json:"display_name"`
+	AvatarURL   string `json:"avatar_url"`
+	CreatedAt   string `json:"created_at"`
+}
+
 type friend struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"display_name"`
@@ -196,6 +205,18 @@ func (c *apiClient) listInbox() ([]friendRequest, error) {
 	return out, nil
 }
 
+func (c *apiClient) listOutgoing() ([]outgoingFriendRequest, error) {
+	data, _, err := c.do(http.MethodGet, "/friends/requests/outgoing", nil)
+	if err != nil {
+		return nil, err
+	}
+	var out []outgoingFriendRequest
+	if err := json.Unmarshal(data, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *apiClient) sendFriendRequest(email string) error {
 	_, _, err := c.do(http.MethodPost, "/friends/requests", map[string]string{
 		"email": strings.TrimSpace(email),
@@ -210,6 +231,16 @@ func (c *apiClient) acceptRequest(requestID string) error {
 
 func (c *apiClient) declineRequest(requestID string) error {
 	_, _, err := c.do(http.MethodPost, "/friends/requests/"+requestID+"/decline", nil)
+	return err
+}
+
+func (c *apiClient) cancelRequest(requestID string) error {
+	_, _, err := c.do(http.MethodPost, "/friends/requests/"+requestID+"/cancel", nil)
+	return err
+}
+
+func (c *apiClient) unfriend(userID string) error {
+	_, _, err := c.do(http.MethodDelete, "/friends/user/"+url.PathEscape(userID), nil)
 	return err
 }
 
@@ -240,6 +271,35 @@ func (c *apiClient) findInboxRequestFromEmail(emailOrName string) (friendRequest
 		}
 	}
 	return friendRequest{}, fmt.Errorf("no pending request from %q", query)
+}
+
+func (c *apiClient) findOutgoingRequestToEmail(emailOrName string) (outgoingFriendRequest, error) {
+	query := strings.TrimSpace(emailOrName)
+	outgoing, err := c.listOutgoing()
+	if err != nil {
+		return outgoingFriendRequest{}, err
+	}
+	for _, req := range outgoing {
+		if req.ToEmail != "" && strings.EqualFold(strings.TrimSpace(req.ToEmail), query) {
+			return req, nil
+		}
+	}
+	for _, req := range outgoing {
+		if strings.EqualFold(strings.TrimSpace(req.DisplayName), query) {
+			return req, nil
+		}
+	}
+
+	profile, err := c.resolveEmail(query)
+	if err != nil {
+		return outgoingFriendRequest{}, fmt.Errorf("no pending outgoing request to %q", query)
+	}
+	for _, req := range outgoing {
+		if req.ToUserID == profile.ID {
+			return req, nil
+		}
+	}
+	return outgoingFriendRequest{}, fmt.Errorf("no pending outgoing request to %q", query)
 }
 
 func (c *apiClient) isFriend(userID string) (bool, error) {

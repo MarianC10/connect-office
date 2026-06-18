@@ -37,7 +37,15 @@ func (s *Service) ListConversations(ctx context.Context, p auth.Principal) ([]Co
 	}
 	out := make([]ConversationResponse, 0, len(items))
 	for _, item := range items {
-		out = append(out, conversationListItemToResponse(item))
+		other, ok := OtherParticipant(item.Conversation, p.UserID)
+		isFriend := false
+		if ok {
+			isFriend, err = s.store.AreFriends(ctx, p.UserID, other)
+			if err != nil {
+				return nil, err
+			}
+		}
+		out = append(out, conversationListItemToResponse(item, isFriend))
 	}
 	return out, nil
 }
@@ -47,30 +55,30 @@ func (s *Service) GetConversationWithFriend(ctx context.Context, p auth.Principa
 	if err != nil {
 		return ConversationResponse{}, ErrFriendNotFound
 	}
-	friends, err := s.store.AreFriends(ctx, p.UserID, friendID)
-	if err != nil {
-		return ConversationResponse{}, err
-	}
-	if !friends {
-		return ConversationResponse{}, ErrNotFriends
-	}
 
 	conv, err := s.store.GetConversationByPair(ctx, p.UserID, friendID)
 	if errors.Is(err, ErrConversationNotFound) {
+		friends, friendErr := s.store.AreFriends(ctx, p.UserID, friendID)
+		if friendErr != nil {
+			return ConversationResponse{}, friendErr
+		}
+		if !friends {
+			return ConversationResponse{}, ErrNotFriends
+		}
 		conv, err = s.store.CreateConversationForPair(ctx, p.UserID, friendID)
 	}
 	if err != nil {
 		return ConversationResponse{}, err
 	}
 
-	friend, err := s.store.GetFriendProfile(ctx, p.UserID, friendID)
+	peer, err := s.store.GetPeerProfile(ctx, friendID)
 	if err != nil {
 		return ConversationResponse{}, err
 	}
 
 	item := ConversationListItem{
 		Conversation: conv,
-		Friend:       friend,
+		Friend:       peer,
 	}
 	last, err := s.store.ListMessages(ctx, conv.ID, nil, 1)
 	if err != nil {
@@ -79,7 +87,12 @@ func (s *Service) GetConversationWithFriend(ctx context.Context, p auth.Principa
 	if len(last) > 0 {
 		item.LastMessage = &last[0]
 	}
-	return conversationListItemToResponse(item), nil
+
+	isFriend, err := s.store.AreFriends(ctx, p.UserID, friendID)
+	if err != nil {
+		return ConversationResponse{}, err
+	}
+	return conversationListItemToResponse(item, isFriend), nil
 }
 
 func (s *Service) ListMessages(ctx context.Context, p auth.Principal, conversationIDStr string, beforeStr string, limit int) ([]MessageResponse, error) {
@@ -87,7 +100,7 @@ func (s *Service) ListMessages(ctx context.Context, p auth.Principal, conversati
 	if err != nil {
 		return nil, ErrConversationNotFound
 	}
-	if err := s.ensureParticipantAndFriends(ctx, p.UserID, convID); err != nil {
+	if err := s.ensureParticipant(ctx, p.UserID, convID); err != nil {
 		return nil, err
 	}
 
@@ -125,11 +138,11 @@ func (s *Service) SendMessage(ctx context.Context, p auth.Principal, conversatio
 	if err != nil {
 		return MessageResponse{}, err
 	}
-	if err := s.ensureFriendsForConversation(ctx, p.UserID, conv); err != nil {
-		return MessageResponse{}, err
-	}
 	if _, ok := OtherParticipant(conv, p.UserID); !ok {
 		return MessageResponse{}, ErrNotParticipant
+	}
+	if err := s.ensureFriendsForConversation(ctx, p.UserID, conv); err != nil {
+		return MessageResponse{}, err
 	}
 
 	msg, err := s.store.InsertMessage(ctx, convID, p.UserID, normalized)
@@ -148,7 +161,7 @@ func (s *Service) SendMessageFromWS(ctx context.Context, userID uuid.UUID, conve
 	return s.SendMessage(ctx, auth.Principal{UserID: userID}, conversationID.String(), body)
 }
 
-func (s *Service) ensureParticipantAndFriends(ctx context.Context, userID, convID uuid.UUID) error {
+func (s *Service) ensureParticipant(ctx context.Context, userID, convID uuid.UUID) error {
 	conv, err := s.store.GetConversationByID(ctx, convID)
 	if err != nil {
 		return err
@@ -156,7 +169,7 @@ func (s *Service) ensureParticipantAndFriends(ctx context.Context, userID, convI
 	if _, ok := OtherParticipant(conv, userID); !ok {
 		return ErrNotParticipant
 	}
-	return s.ensureFriendsForConversation(ctx, userID, conv)
+	return nil
 }
 
 func (s *Service) ensureFriendsForConversation(ctx context.Context, userID uuid.UUID, conv Conversation) error {
@@ -185,9 +198,10 @@ func normalizeMessageBody(body string) (string, error) {
 	return trimmed, nil
 }
 
-func conversationListItemToResponse(item ConversationListItem) ConversationResponse {
+func conversationListItemToResponse(item ConversationListItem, isFriend bool) ConversationResponse {
 	resp := ConversationResponse{
 		ID: item.Conversation.ID.String(),
+		IsFriend: isFriend,
 		Friend: ConversationFriend{
 			ID:          item.Friend.ID.String(),
 			DisplayName: item.Friend.DisplayName,

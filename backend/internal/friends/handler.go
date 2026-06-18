@@ -44,6 +44,77 @@ func NewInboxHandler(svc *Service) http.HandlerFunc {
 	}
 }
 
+func NewOutboxHandler(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		p, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		items, err := svc.ListOutgoing(r.Context(), p)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if items == nil {
+			items = []OutgoingFriendRequestResponse{}
+		}
+		writeJSON(w, http.StatusOK, items)
+	}
+}
+
+func NewCancelHandler(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		p, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		requestID := strings.TrimSpace(r.PathValue("id"))
+		if requestID == "" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := svc.CancelRequest(r.Context(), p, requestID); err != nil {
+			writeFriendError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func NewUnfriendHandler(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		p, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		friendID := strings.TrimSpace(r.PathValue("id"))
+		if friendID == "" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := svc.Unfriend(r.Context(), p, friendID); err != nil {
+			writeFriendError(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
 func NewAcceptHandler(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -194,7 +265,7 @@ func writeFriendError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrAlreadyFriends), errors.Is(err, ErrPendingRequestExists):
 		http.Error(w, err.Error(), http.StatusConflict)
-	case errors.Is(err, ErrRequestNotFound):
+	case errors.Is(err, ErrRequestNotFound), errors.Is(err, ErrNotFriends):
 		http.Error(w, err.Error(), http.StatusNotFound)
 	default:
 		http.Error(w, err.Error(), http.StatusInternalServerError)

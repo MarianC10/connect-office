@@ -20,11 +20,14 @@ import {
 } from '@/lib/chat-ws';
 import {
   acceptRequest,
+  cancelOutgoingRequest,
   declineRequest,
   fetchInbox,
+  fetchOutgoing,
   Friend,
   FriendRequest,
   listFriends,
+  OutgoingFriendRequest,
 } from '@/lib/friends';
 
 type Segment = 'requests' | 'friends' | 'chats';
@@ -42,6 +45,7 @@ export default function PeopleScreen() {
   const router = useRouter();
   const [segment, setSegment] = useState<Segment>('friends');
   const [inbox, setInbox] = useState<FriendRequest[]>([]);
+  const [outgoing, setOutgoing] = useState<OutgoingFriendRequest[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -50,12 +54,14 @@ export default function PeopleScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [inboxItems, friendItems, chatItems] = await Promise.all([
+      const [inboxItems, outgoingItems, friendItems, chatItems] = await Promise.all([
         fetchInbox(),
+        fetchOutgoing(),
         listFriends(),
         listConversations(),
       ]);
       setInbox(inboxItems);
+      setOutgoing(outgoingItems);
       setFriends(friendItems);
       setConversations(chatItems);
     } catch (err) {
@@ -154,10 +160,34 @@ export default function PeopleScreen() {
     }
   };
 
+  const handleCancelOutgoing = async (requestId: string) => {
+    setActingOn(requestId);
+    try {
+      await cancelOutgoingRequest(requestId);
+      await load();
+    } catch (err) {
+      Alert.alert(
+        'Error',
+        err instanceof Error ? err.message : 'Could not cancel request.'
+      );
+    } finally {
+      setActingOn(null);
+    }
+  };
+
   const renderRequests = () => (
     <FlatList
-      data={inbox}
-      keyExtractor={(item) => item.id}
+      data={[
+        ...(inbox.length > 0
+          ? [{ type: 'header' as const, key: 'incoming-header', title: 'Incoming' }]
+          : []),
+        ...inbox.map((req) => ({ type: 'incoming' as const, key: req.id, req })),
+        ...(outgoing.length > 0
+          ? [{ type: 'header' as const, key: 'outgoing-header', title: 'Sent' }]
+          : []),
+        ...outgoing.map((req) => ({ type: 'outgoing' as const, key: req.id, req })),
+      ]}
+      keyExtractor={(item) => item.key}
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
       }
@@ -165,49 +195,88 @@ export default function PeopleScreen() {
         <View style={styles.emptyBox}>
           <Text style={styles.emptyTitle}>No pending requests</Text>
           <Text style={styles.emptyText}>
-            Friend requests you receive will appear here.
+            Incoming and sent friend requests will appear here.
           </Text>
         </View>
       }
-      renderItem={({ item: req }) => (
-        <View style={styles.requestRow}>
-          <TouchableOpacity
-            style={styles.requestMain}
-            onPress={() =>
-              router.push({
-                pathname: '/users/[id]',
-                params: { id: req.from_user_id },
-              } as never)
-            }
-          >
-            <UserAvatar uri={req.avatar_url} size={44} />
-            <View style={styles.requestText}>
-              <Text style={styles.requestName}>{req.display_name}</Text>
-              <Text style={styles.requestMeta}>Wants to connect</Text>
+      renderItem={({ item }) => {
+        if (item.type === 'header') {
+          return <Text style={styles.sectionHeader}>{item.title}</Text>;
+        }
+        if (item.type === 'incoming') {
+          const req = item.req;
+          return (
+            <View style={styles.requestRow}>
+              <TouchableOpacity
+                style={styles.requestMain}
+                onPress={() =>
+                  router.push({
+                    pathname: '/users/[id]',
+                    params: { id: req.from_user_id },
+                  } as never)
+                }
+              >
+                <UserAvatar uri={req.avatar_url} size={44} />
+                <View style={styles.requestText}>
+                  <Text style={styles.requestName}>{req.display_name}</Text>
+                  <Text style={styles.requestMeta}>Wants to connect</Text>
+                </View>
+              </TouchableOpacity>
+              <View style={styles.requestActions}>
+                <TouchableOpacity
+                  style={styles.acceptBtn}
+                  disabled={actingOn === req.id}
+                  onPress={() => void handleAccept(req.id)}
+                >
+                  {actingOn === req.id ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Feather name="check" size={18} color="#fff" />
+                  )}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.declineBtn}
+                  disabled={actingOn === req.id}
+                  onPress={() => void handleDecline(req.id)}
+                >
+                  <Feather name="x" size={18} color="#666" />
+                </TouchableOpacity>
+              </View>
             </View>
-          </TouchableOpacity>
-          <View style={styles.requestActions}>
+          );
+        }
+        const req = item.req;
+        return (
+          <View style={styles.requestRow}>
             <TouchableOpacity
-              style={styles.acceptBtn}
-              disabled={actingOn === req.id}
-              onPress={() => void handleAccept(req.id)}
+              style={styles.requestMain}
+              onPress={() =>
+                router.push({
+                  pathname: '/users/[id]',
+                  params: { id: req.to_user_id },
+                } as never)
+              }
             >
-              {actingOn === req.id ? (
-                <ActivityIndicator color="#fff" size="small" />
-              ) : (
-                <Feather name="check" size={18} color="#fff" />
-              )}
+              <UserAvatar uri={req.avatar_url} size={44} />
+              <View style={styles.requestText}>
+                <Text style={styles.requestName}>{req.display_name}</Text>
+                <Text style={styles.requestMeta}>Request pending</Text>
+              </View>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.declineBtn}
               disabled={actingOn === req.id}
-              onPress={() => void handleDecline(req.id)}
+              onPress={() => void handleCancelOutgoing(req.id)}
             >
-              <Feather name="x" size={18} color="#666" />
+              {actingOn === req.id ? (
+                <ActivityIndicator color="#666" size="small" />
+              ) : (
+                <Feather name="x" size={18} color="#666" />
+              )}
             </TouchableOpacity>
           </View>
-        </View>
-      )}
+        );
+      }}
       contentContainerStyle={styles.listContent}
     />
   );
@@ -321,7 +390,11 @@ export default function PeopleScreen() {
               ]}
             >
               {key === 'requests'
-                ? `Requests${inbox.length > 0 ? ` (${inbox.length})` : ''}`
+                ? `Requests${
+                    inbox.length + outgoing.length > 0
+                      ? ` (${inbox.length + outgoing.length})`
+                      : ''
+                  }`
                 : key.charAt(0).toUpperCase() + key.slice(1)}
             </Text>
           </TouchableOpacity>
@@ -439,6 +512,16 @@ const styles = StyleSheet.create({
   requestMeta: {
     fontSize: 13,
     color: '#666',
+  },
+  sectionHeader: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#666',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: 8,
+    marginBottom: 8,
+    marginLeft: 4,
   },
   requestActions: {
     flexDirection: 'row',

@@ -109,6 +109,22 @@ func (s *Service) ListInbox(ctx context.Context, p auth.Principal) ([]FriendRequ
 	return out, nil
 }
 
+func (s *Service) ListOutgoing(ctx context.Context, p auth.Principal) ([]OutgoingFriendRequestResponse, error) {
+	items, err := s.store.ListPendingOutgoing(ctx, p.UserID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]OutgoingFriendRequestResponse, 0, len(items))
+	for _, req := range items {
+		toUser, err := s.users.GetByID(ctx, req.ToUserID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, requestToOutgoingItem(req, toUser, s.cfg))
+	}
+	return out, nil
+}
+
 func (s *Service) AcceptRequest(ctx context.Context, p auth.Principal, requestID string) error {
 	id, err := uuid.Parse(requestID)
 	if err != nil {
@@ -141,6 +157,22 @@ func (s *Service) DeclineRequest(ctx context.Context, p auth.Principal, requestI
 	return s.store.DeclineRequest(ctx, id, p.UserID)
 }
 
+func (s *Service) CancelRequest(ctx context.Context, p auth.Principal, requestID string) error {
+	id, err := uuid.Parse(requestID)
+	if err != nil {
+		return ErrRequestNotFound
+	}
+	return s.store.CancelRequest(ctx, id, p.UserID)
+}
+
+func (s *Service) Unfriend(ctx context.Context, p auth.Principal, friendIDStr string) error {
+	friendID, err := uuid.Parse(friendIDStr)
+	if err != nil {
+		return ErrUserNotFound
+	}
+	return s.store.RemoveFriend(ctx, p.UserID, friendID)
+}
+
 func (s *Service) ListFriends(ctx context.Context, p auth.Principal) ([]FriendResponse, error) {
 	items, err := s.store.ListFriends(ctx, p.UserID)
 	if err != nil {
@@ -165,6 +197,18 @@ func requestToInboxItem(req FriendRequest, fromUser users.User, cfg users.Config
 		FromUserID:  req.FromUserID.String(),
 		FromEmail:   userEmailString(fromUser.Email),
 		DisplayName: fromUser.DisplayName,
+		AvatarURL:   avatar,
+		CreatedAt:   req.CreatedAt.UTC().Format(time.RFC3339),
+	}
+}
+
+func requestToOutgoingItem(req FriendRequest, toUser users.User, cfg users.Config) OutgoingFriendRequestResponse {
+	avatar := users.ResolveAvatarURL(toUser.AvatarURL, cfg)
+	return OutgoingFriendRequestResponse{
+		ID:          req.ID.String(),
+		ToUserID:    req.ToUserID.String(),
+		ToEmail:     userEmailString(toUser.Email),
+		DisplayName: toUser.DisplayName,
 		AvatarURL:   avatar,
 		CreatedAt:   req.CreatedAt.UTC().Format(time.RFC3339),
 	}

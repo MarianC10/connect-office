@@ -148,6 +148,18 @@ func runCommand(c *apiClient, token string, cfg cliConfig, cmd string, args []st
 		}
 		return nil
 
+	case "outgoing":
+		items, err := c.listOutgoing()
+		if err != nil {
+			return err
+		}
+		if cfg.jsonOut {
+			printJSON(items)
+		} else {
+			printOutgoing(items)
+		}
+		return nil
+
 	case "request":
 		if len(args) < 1 {
 			return fmt.Errorf("usage: request <email>")
@@ -182,6 +194,34 @@ func runCommand(c *apiClient, token string, cfg cliConfig, cmd string, args []st
 		fmt.Printf("declined friend request from %s\n", args[0])
 		return nil
 
+	case "cancel":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: cancel <email>")
+		}
+		req, err := c.findOutgoingRequestToEmail(args[0])
+		if err != nil {
+			return err
+		}
+		if err := c.cancelRequest(req.ID); err != nil {
+			return err
+		}
+		fmt.Printf("cancelled outgoing friend request to %s\n", args[0])
+		return nil
+
+	case "unfriend":
+		if len(args) < 1 {
+			return fmt.Errorf("usage: unfriend <email>")
+		}
+		profile, err := c.resolveEmail(args[0])
+		if err != nil {
+			return err
+		}
+		if err := c.unfriend(profile.ID); err != nil {
+			return err
+		}
+		fmt.Printf("unfriended %s (chat history kept, sending disabled)\n", args[0])
+		return nil
+
 	case "conversations":
 		items, err := c.listConversations()
 		if err != nil {
@@ -203,13 +243,6 @@ func runCommand(c *apiClient, token string, cfg cliConfig, cmd string, args []st
 		profile, err := c.resolveEmail(email)
 		if err != nil {
 			return err
-		}
-		ok, err := c.isFriend(profile.ID)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return fmt.Errorf("%s is not a friend", email)
 		}
 		conv, err := c.conversationWithFriend(profile.ID)
 		if err != nil {

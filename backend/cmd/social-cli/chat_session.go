@@ -17,14 +17,6 @@ func runChatSession(c *apiClient, token, email string, historyLimit int) error {
 		return err
 	}
 
-	ok, err := c.isFriend(profile.ID)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return fmt.Errorf("%s is not a friend — send/accept a friend request first", email)
-	}
-
 	conv, err := c.conversationWithFriend(profile.ID)
 	if err != nil {
 		return err

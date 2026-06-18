@@ -22,6 +22,7 @@ type ConversationFriend struct {
 type ConversationResponse struct {
 	ID          string              `json:"id"`
 	Friend      ConversationFriend  `json:"friend"`
+	IsFriend    bool                `json:"is_friend"`
 	LastMessage *LastMessagePreview `json:"last_message"`
 }
 

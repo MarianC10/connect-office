@@ -14,6 +14,15 @@ type FriendRequestResponse struct {
 	CreatedAt   string `json:"created_at"`
 }
 
+type OutgoingFriendRequestResponse struct {
+	ID          string `json:"id"`
+	ToUserID    string `json:"to_user_id"`
+	ToEmail     string `json:"to_email,omitempty"`
+	DisplayName string `json:"display_name"`
+	AvatarURL   string `json:"avatar_url"`
+	CreatedAt   string `json:"created_at"`
+}
+
 type FriendResponse struct {
 	ID          string `json:"id"`
 	DisplayName string `json:"display_name"`

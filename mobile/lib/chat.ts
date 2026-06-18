@@ -22,6 +22,7 @@ export type ConversationFriend = {
 export type Conversation = {
   id: string;
   friend: ConversationFriend;
+  is_friend: boolean;
   last_message: LastMessagePreview | null;
 };
 

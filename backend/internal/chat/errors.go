@@ -5,7 +5,7 @@ import "errors"
 var (
 	ErrConversationNotFound = errors.New("conversation not found")
 	ErrNotParticipant       = errors.New("not a conversation participant")
-	ErrNotFriends           = errors.New("users are not friends")
+	ErrNotFriends           = errors.New("You are no longer friends")
 	ErrInvalidMessage       = errors.New("invalid message body")
 	ErrFriendNotFound       = errors.New("friend not found")
 )

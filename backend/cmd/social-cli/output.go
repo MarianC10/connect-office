@@ -88,6 +88,24 @@ func printInbox(items []friendRequest) {
 	fmt.Println("\nUse: accept <email> | accept \"Display Name\"")
 }
 
+func printOutgoing(items []outgoingFriendRequest) {
+	if len(items) == 0 {
+		fmt.Println("no outgoing requests")
+		return
+	}
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintf(w, "EMAIL\tDISPLAY NAME\tREQUEST ID\tSINCE\n")
+	for _, r := range items {
+		email := strings.TrimSpace(r.ToEmail)
+		if email == "" {
+			email = "(unknown — use display name: cancel \"" + r.DisplayName + "\")"
+		}
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", email, r.DisplayName, r.ID, formatTime(r.CreatedAt))
+	}
+	w.Flush()
+	fmt.Println("\nUse: cancel <email> | cancel \"Display Name\"")
+}
+
 func printConversations(items []conversation) {
 	if len(items) == 0 {
 		fmt.Println("no conversations")
@@ -149,10 +167,13 @@ Commands:
   search <query>                  Search public users by name
   lookup <email>                  Profile by exact email
   friends                         List friends
-  inbox                           Pending friend requests
+  inbox                           Pending incoming friend requests
+  outgoing                        Pending sent friend requests
   request <email>                 Send friend request
   accept <email>                  Accept request from email
   decline <email>                 Decline request from email
+  cancel <email>                  Cancel outgoing request to email
+  unfriend <email>                Remove friend (keeps chat history)
   conversations                   List chats
   send <email> <message>          Send one message
   chat <email> [--history N]        Interactive chat (REST history + WS live)

@@ -111,7 +111,7 @@ export default function ChatThreadScreen() {
 
   const handleSend = async () => {
     const body = draft.trim();
-    if (!body || !conversationId || sending) return;
+    if (!body || !conversationId || sending || !canSend) return;
     if (body.length > MAX_MESSAGE_LENGTH) {
       Alert.alert('Too long', `Messages are limited to ${MAX_MESSAGE_LENGTH} characters.`);
       return;
@@ -148,6 +148,7 @@ export default function ChatThreadScreen() {
   }
 
   const friendName = conversation?.friend.display_name ?? 'Chat';
+  const canSend = conversation?.is_friend ?? false;
 
   return (
     <SafeAreaView style={styles.screen} edges={['top', 'bottom']}>
@@ -187,7 +188,9 @@ export default function ChatThreadScreen() {
           }
           ListEmptyComponent={
             <View style={styles.emptyBox}>
-              <Text style={styles.emptyText}>No messages yet. Say hello!</Text>
+              <Text style={styles.emptyText}>
+                {canSend ? 'No messages yet. Say hello!' : 'No messages yet.'}
+              </Text>
             </View>
           }
           renderItem={({ item }) => {
@@ -211,28 +214,34 @@ export default function ChatThreadScreen() {
           }}
         />
 
-        <View style={styles.composer}>
-          <TextInput
-            style={styles.input}
-            placeholder="Message..."
-            placeholderTextColor="#999"
-            value={draft}
-            onChangeText={setDraft}
-            multiline
-            maxLength={MAX_MESSAGE_LENGTH}
-          />
-          <TouchableOpacity
-            style={[styles.sendBtn, (!draft.trim() || sending) && styles.sendBtnDisabled]}
-            disabled={!draft.trim() || sending}
-            onPress={() => void handleSend()}
-          >
-            {sending ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Feather name="send" size={18} color="#fff" />
-            )}
-          </TouchableOpacity>
-        </View>
+        {canSend ? (
+          <View style={styles.composer}>
+            <TextInput
+              style={styles.input}
+              placeholder="Message..."
+              placeholderTextColor="#999"
+              value={draft}
+              onChangeText={setDraft}
+              multiline
+              maxLength={MAX_MESSAGE_LENGTH}
+            />
+            <TouchableOpacity
+              style={[styles.sendBtn, (!draft.trim() || sending) && styles.sendBtnDisabled]}
+              disabled={!draft.trim() || sending}
+              onPress={() => void handleSend()}
+            >
+              {sending ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Feather name="send" size={18} color="#fff" />
+              )}
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.readOnlyBar}>
+            <Text style={styles.readOnlyText}>You are no longer friends</Text>
+          </View>
+        )}
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -341,4 +350,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sendBtnDisabled: { opacity: 0.5 },
+  readOnlyBar: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,0,0,0.06)',
+    backgroundColor: '#fff',
+    alignItems: 'center',
+  },
+  readOnlyText: {
+    color: '#666',
+    fontSize: 15,
+    fontWeight: '600',
+  },
 });

@@ -284,11 +284,17 @@ func main() {
 
 	http.Handle("GET /friends/requests/inbox", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewInboxHandler(friendSvc))))
 
+	http.Handle("GET /friends/requests/outgoing", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewOutboxHandler(friendSvc))))
+
 	http.Handle("POST /friends/requests/{id}/accept", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewAcceptHandler(friendSvc))))
 
 	http.Handle("POST /friends/requests/{id}/decline", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewDeclineHandler(friendSvc))))
 
+	http.Handle("POST /friends/requests/{id}/cancel", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewCancelHandler(friendSvc))))
+
 	http.Handle("/friends/requests", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewRequestsHandler(friendSvc))))
+
+	http.Handle("DELETE /friends/user/{id}", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewUnfriendHandler(friendSvc))))
 
 	http.Handle("/friends", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewFriendsHandler(friendSvc))))
 
