@@ -196,15 +196,19 @@ export function LocationPickerMap({ value, onChange, height = 220 }: LocationPic
         </View>
       )}
 
-      <View style={[styles.mapWrap, { height }]}>
+      <View
+        style={[styles.mapWrap, { height }]}
+        onStartShouldSetResponder={() => true}
+        onMoveShouldSetResponder={() => true}
+      >
         <MapView
           ref={mapRef}
           style={StyleSheet.absoluteFill}
           provider={PROVIDER_DEFAULT}
           initialRegion={initialRegion}
           onPress={handleMapPress}
-          scrollEnabled={false}
-          zoomEnabled={false}
+          scrollEnabled
+          zoomEnabled
           rotateEnabled={false}
           pitchEnabled={false}
         >
@@ -214,7 +218,7 @@ export function LocationPickerMap({ value, onChange, height = 220 }: LocationPic
         </MapView>
       </View>
 
-      <Text style={styles.hint}>Tap the map or search to set the office location</Text>
+      <Text style={styles.hint}>Pan, zoom, or tap the map to set the office location</Text>
     </View>
   );
 }
