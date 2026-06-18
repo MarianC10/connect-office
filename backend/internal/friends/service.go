@@ -163,8 +163,16 @@ func requestToInboxItem(req FriendRequest, fromUser users.User, cfg users.Config
 	return FriendRequestResponse{
 		ID:          req.ID.String(),
 		FromUserID:  req.FromUserID.String(),
+		FromEmail:   userEmailString(fromUser.Email),
 		DisplayName: fromUser.DisplayName,
 		AvatarURL:   avatar,
 		CreatedAt:   req.CreatedAt.UTC().Format(time.RFC3339),
 	}
+}
+
+func userEmailString(email *string) string {
+	if email == nil {
+		return ""
+	}
+	return strings.TrimSpace(*email)
 }

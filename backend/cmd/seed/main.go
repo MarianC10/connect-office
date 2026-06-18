@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MarianC10/connect-office/backend/internal/devtest"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,9 +21,9 @@ var (
 	locBuch  = uuid.MustParse("a0000002-0000-4000-8000-000000000002")
 	locTimis = uuid.MustParse("a0000003-0000-4000-8000-000000000003")
 
-	testUserID    = uuid.MustParse("c0000001-0000-4000-8000-000000000001")
-	testUserEmail = "seed-test@connectoffice.local"
-	testUserName  = "Seed Test"
+	testUserID    = devtest.TestUserID
+	testUserEmail = devtest.TestUserEmail
+	testUserName  = devtest.TestUserName
 
 	amHotDesks   = uuid.MustParse("b0000001-0000-4000-8000-000000000001")
 	amMeeting    = uuid.MustParse("b0000002-0000-4000-8000-000000000002")

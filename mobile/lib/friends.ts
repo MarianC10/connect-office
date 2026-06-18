@@ -3,6 +3,7 @@ import { authFetch } from "@/lib/api";
 export type FriendRequest = {
   id: string;
   from_user_id: string;
+  from_email?: string;
   display_name: string;
   avatar_url: string;
   created_at: string;

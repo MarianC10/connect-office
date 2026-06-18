@@ -8,6 +8,7 @@ type CreateRequestBody struct {
 type FriendRequestResponse struct {
 	ID          string `json:"id"`
 	FromUserID  string `json:"from_user_id"`
+	FromEmail   string `json:"from_email,omitempty"`
 	DisplayName string `json:"display_name"`
 	AvatarURL   string `json:"avatar_url"`
 	CreatedAt   string `json:"created_at"`

@@ -282,9 +282,11 @@ func main() {
 
 	http.Handle("/users/", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, users.NewUsersHandler(userSvc))))
 
-	http.Handle("/friends/requests/inbox", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewInboxHandler(friendSvc))))
+	http.Handle("GET /friends/requests/inbox", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewInboxHandler(friendSvc))))
 
-	http.Handle("/friends/requests/", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewRequestByIDHandler(friendSvc))))
+	http.Handle("POST /friends/requests/{id}/accept", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewAcceptHandler(friendSvc))))
+
+	http.Handle("POST /friends/requests/{id}/decline", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewDeclineHandler(friendSvc))))
 
 	http.Handle("/friends/requests", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewRequestsHandler(friendSvc))))
 
