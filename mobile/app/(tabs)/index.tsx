@@ -18,11 +18,12 @@ import {
   Keyboard,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import MapView, { Marker, PROVIDER_DEFAULT, Region } from "react-native-maps";
+// import MapView, { Marker, PROVIDER_DEFAULT, Region } from "react-native-maps";
+import MapView, { Marker, Callout, CalloutSubview, PROVIDER_DEFAULT, Region } from "react-native-maps";
 import { Ionicons, Feather } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 import { router } from "expo-router";
-import { useScrollToTop } from "@react-navigation/native";
+import { useFocusEffect, useScrollToTop } from "@react-navigation/native";
 
 import { getAccessToken } from "@/lib/api";
 import { API_BASE_URL } from "@/lib/env";
@@ -164,16 +165,28 @@ async function geocodeLocation(query: string): Promise<NominatimResult[]> {
 
 interface OfficeMapMarkersProps {
   markers: MapMarkerData[];
+  onCalloutPress?: (marker: MapMarkerData) => void;
 }
 
-function OfficeMapMarkers({ markers }: OfficeMapMarkersProps) {
+function OfficeMapMarkers({ markers, onCalloutPress }: OfficeMapMarkersProps) {
   return (
     <>
       {markers.map((m) => (
-        <Marker key={m.id} coordinate={m.coordinate} title={m.title}>
+        <Marker key={m.id} coordinate={m.coordinate}>
           <View style={styles.markerOuter}>
             <View style={styles.markerInner} />
           </View>
+
+          {onCalloutPress && (
+            <Callout tooltip={false}>
+              <CalloutSubview onPress={() => onCalloutPress(m)}>
+                <View style={styles.calloutBox}>
+                  <Text style={styles.calloutTitle}>{m.title}</Text>
+                  <Text style={styles.calloutSubtitle}>Tap to open</Text>
+                </View>
+              </CalloutSubview>
+            </Callout>
+          )}
         </Marker>
       ))}
     </>
@@ -186,9 +199,10 @@ interface FullscreenMapProps {
   visible: boolean;
   onClose: () => void;
   markers: MapMarkerData[];
+  onOpenLocation: (locationId: string) => void;
 }
 
-function FullscreenMap({ visible, onClose, markers }: FullscreenMapProps) {
+function FullscreenMap({ visible, onClose, markers, onOpenLocation }: FullscreenMapProps) {
   const insets = useSafeAreaInsets();
   const mapRef = useRef<MapView>(null);
 
@@ -303,7 +317,7 @@ function FullscreenMap({ visible, onClose, markers }: FullscreenMapProps) {
   };
 
   return (
-    <Modal visible={visible} animationType="fade" statusBarTranslucent onRequestClose={handleClose}>
+    <Modal visible={visible} animationType="none" statusBarTranslucent onRequestClose={handleClose}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -319,7 +333,12 @@ function FullscreenMap({ visible, onClose, markers }: FullscreenMapProps) {
             showsMyLocationButton={false}
             showsCompass
           >
-            <OfficeMapMarkers markers={markers} />
+            <OfficeMapMarkers
+              markers={markers}
+              onCalloutPress={(marker) => {
+                onOpenLocation(marker.id);
+              }}
+            />
             {searchedPin && (
               <Marker coordinate={searchedPin} title={searchedLabel}>
                 <View style={styles.searchedMarkerOuter}>
@@ -583,10 +602,26 @@ export default function HomeScreen() {
   const [searchQuery, setSearchQuery]     = useState<string>("");
   const [searchFocused, setSearchFocused] = useState<boolean>(false);
   const [mapFullscreen, setMapFullscreen] = useState<boolean>(false);
+  const openingLocationRef = useRef(false);
+  const shouldReopenMapRef = useRef(false);
 
   useScrollToTop(scrollRef);
 
   const { locations, loading, error } = useLocations();
+
+  useFocusEffect(
+    useCallback(() => {
+      openingLocationRef.current = false;
+
+      if (shouldReopenMapRef.current) {
+        shouldReopenMapRef.current = false;
+
+        requestAnimationFrame(() => {
+          setMapFullscreen(true);
+        });
+      }
+    }, [])
+  );
 
   // Derive map markers from real data
   const officeMarkers: MapMarkerData[] = locations.map((loc) => ({
@@ -767,6 +802,18 @@ export default function HomeScreen() {
         visible={mapFullscreen}
         onClose={() => setMapFullscreen(false)}
         markers={officeMarkers}
+        onOpenLocation={(locationId) => {
+          if (openingLocationRef.current) return;
+        
+          openingLocationRef.current = true;
+          shouldReopenMapRef.current = true;
+          setMapFullscreen(false);
+        
+          router.push({
+            pathname: "/office/[id]",
+            params: { id: locationId },
+          } as any);
+        }}
       />
     </ImageBackground>
   );
@@ -839,7 +886,7 @@ const styles = StyleSheet.create({
 
   // Scroll
   scroll: { flex: 1 },
-  scrollContent: { paddingBottom: 8 },
+  scrollContent: { paddingBottom: 60 },
 
   // Inline map
   mapSection: {
@@ -924,6 +971,28 @@ const styles = StyleSheet.create({
     height: 10,
     borderRadius: 5,
     backgroundColor: C.danger,
+  },
+
+  // Callout tooltip
+  calloutBox: {
+    minWidth: 150,
+    maxWidth: 220,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    // backgroundColor: "#FFFFFF",
+    borderRadius: 5,
+  },
+  
+  calloutTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: C.text,
+  },
+  
+  calloutSubtitle: {
+    fontSize: 11,
+    color: C.textMuted,
+    marginTop: 3,
   },
 
   // Fullscreen modal
