@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,6 +14,10 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 
 import { UserAvatar } from '@/components/user-avatar';
+import { Conversation, listConversations } from '@/lib/chat';
+import {
+  subscribeChatWS,
+} from '@/lib/chat-ws';
 import {
   acceptRequest,
   declineRequest,
@@ -23,22 +27,37 @@ import {
   listFriends,
 } from '@/lib/friends';
 
+type Segment = 'requests' | 'friends' | 'chats';
+
+function formatPreviewTime(iso: string): string {
+  const date = new Date(iso);
+  const now = new Date();
+  if (date.toDateString() === now.toDateString()) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+  return date.toLocaleDateString();
+}
+
 export default function PeopleScreen() {
   const router = useRouter();
+  const [segment, setSegment] = useState<Segment>('friends');
   const [inbox, setInbox] = useState<FriendRequest[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actingOn, setActingOn] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
-      const [inboxItems, friendItems] = await Promise.all([
+      const [inboxItems, friendItems, chatItems] = await Promise.all([
         fetchInbox(),
         listFriends(),
+        listConversations(),
       ]);
       setInbox(inboxItems);
       setFriends(friendItems);
+      setConversations(chatItems);
     } catch (err) {
       Alert.alert(
         'Error',
@@ -56,6 +75,49 @@ export default function PeopleScreen() {
       void load();
     }, [load])
   );
+
+  useEffect(() => {
+    const unsub = subscribeChatWS((event) => {
+      if (event.type === 'friend_request.new') {
+        setInbox((prev) => {
+          if (prev.some((r) => r.id === event.request.id)) return prev;
+          return [event.request, ...prev];
+        });
+        return;
+      }
+      if (event.type === 'friend_request.accepted') {
+        setFriends((prev) => {
+          if (prev.some((f) => f.id === event.friend.id)) return prev;
+          return [...prev, event.friend].sort((a, b) =>
+            a.display_name.localeCompare(b.display_name)
+          );
+        });
+        void load();
+        return;
+      }
+      if (event.type === 'message.new') {
+        setConversations((prev) => {
+          const idx = prev.findIndex((c) => c.id === event.conversation_id);
+          if (idx === -1) {
+            void load();
+            return prev;
+          }
+          const updated: Conversation = {
+            ...prev[idx],
+            last_message: {
+              id: event.message.id,
+              body: event.message.body,
+              created_at: event.message.created_at,
+            },
+          };
+          const next = [...prev];
+          next.splice(idx, 1);
+          return [updated, ...next];
+        });
+      }
+    });
+    return unsub;
+  }, [load]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -92,6 +154,146 @@ export default function PeopleScreen() {
     }
   };
 
+  const renderRequests = () => (
+    <FlatList
+      data={inbox}
+      keyExtractor={(item) => item.id}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      }
+      ListEmptyComponent={
+        <View style={styles.emptyBox}>
+          <Text style={styles.emptyTitle}>No pending requests</Text>
+          <Text style={styles.emptyText}>
+            Friend requests you receive will appear here.
+          </Text>
+        </View>
+      }
+      renderItem={({ item: req }) => (
+        <View style={styles.requestRow}>
+          <TouchableOpacity
+            style={styles.requestMain}
+            onPress={() =>
+              router.push({
+                pathname: '/users/[id]',
+                params: { id: req.from_user_id },
+              } as never)
+            }
+          >
+            <UserAvatar uri={req.avatar_url} size={44} />
+            <View style={styles.requestText}>
+              <Text style={styles.requestName}>{req.display_name}</Text>
+              <Text style={styles.requestMeta}>Wants to connect</Text>
+            </View>
+          </TouchableOpacity>
+          <View style={styles.requestActions}>
+            <TouchableOpacity
+              style={styles.acceptBtn}
+              disabled={actingOn === req.id}
+              onPress={() => void handleAccept(req.id)}
+            >
+              {actingOn === req.id ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Feather name="check" size={18} color="#fff" />
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.declineBtn}
+              disabled={actingOn === req.id}
+              onPress={() => void handleDecline(req.id)}
+            >
+              <Feather name="x" size={18} color="#666" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+      contentContainerStyle={styles.listContent}
+    />
+  );
+
+  const renderFriends = () => (
+    <FlatList
+      data={friends}
+      keyExtractor={(item) => item.id}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      }
+      ListEmptyComponent={
+        <View style={styles.emptyBox}>
+          <Text style={styles.emptyTitle}>No friends yet</Text>
+          <Text style={styles.emptyText}>
+            Search for people or add someone by email.
+          </Text>
+        </View>
+      }
+      renderItem={({ item }) => (
+        <TouchableOpacity
+          style={styles.friendRow}
+          onPress={() =>
+            router.push({
+              pathname: '/users/[id]',
+              params: { id: item.id },
+            } as never)
+          }
+        >
+          <UserAvatar uri={item.avatar_url} size={48} />
+          <View style={styles.friendText}>
+            <Text style={styles.friendName}>{item.display_name}</Text>
+            <Text style={styles.friendMeta}>
+              {item.is_public ? 'Public profile' : 'Private profile'}
+            </Text>
+          </View>
+          <Feather name="chevron-right" size={20} color="#999" />
+        </TouchableOpacity>
+      )}
+      contentContainerStyle={styles.listContent}
+    />
+  );
+
+  const renderChats = () => (
+    <FlatList
+      data={conversations}
+      keyExtractor={(item) => item.id}
+      refreshControl={
+        <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+      }
+      ListEmptyComponent={
+        <View style={styles.emptyBox}>
+          <Text style={styles.emptyTitle}>No chats yet</Text>
+          <Text style={styles.emptyText}>
+            Message a friend from their profile to start a conversation.
+          </Text>
+        </View>
+      }
+      renderItem={({ item }) => (
+        <TouchableOpacity
+          style={styles.friendRow}
+          onPress={() =>
+            router.push({
+              pathname: '/chat/[id]',
+              params: { id: item.id },
+            } as never)
+          }
+        >
+          <UserAvatar uri={item.friend.avatar_url} size={48} />
+          <View style={styles.friendText}>
+            <Text style={styles.friendName}>{item.friend.display_name}</Text>
+            <Text style={styles.chatPreview} numberOfLines={1}>
+              {item.last_message?.body ?? 'No messages yet'}
+            </Text>
+          </View>
+          {item.last_message ? (
+            <Text style={styles.chatTime}>
+              {formatPreviewTime(item.last_message.created_at)}
+            </Text>
+          ) : null}
+        </TouchableOpacity>
+      )}
+      contentContainerStyle={styles.listContent}
+    />
+  );
+
   return (
     <SafeAreaView style={styles.screen} edges={['top']}>
       <View style={styles.header}>
@@ -105,93 +307,37 @@ export default function PeopleScreen() {
         </TouchableOpacity>
       </View>
 
+      <View style={styles.segmentRow}>
+        {(['requests', 'friends', 'chats'] as const).map((key) => (
+          <TouchableOpacity
+            key={key}
+            style={[styles.segment, segment === key && styles.segmentActive]}
+            onPress={() => setSegment(key)}
+          >
+            <Text
+              style={[
+                styles.segmentText,
+                segment === key && styles.segmentTextActive,
+              ]}
+            >
+              {key === 'requests'
+                ? `Requests${inbox.length > 0 ? ` (${inbox.length})` : ''}`
+                : key.charAt(0).toUpperCase() + key.slice(1)}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color="#1E2A5E" />
         </View>
+      ) : segment === 'requests' ? (
+        renderRequests()
+      ) : segment === 'friends' ? (
+        renderFriends()
       ) : (
-        <FlatList
-          data={friends}
-          keyExtractor={(item) => item.id}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
-          ListHeaderComponent={
-            inbox.length > 0 ? (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Friend requests</Text>
-                {inbox.map((req) => (
-                  <View key={req.id} style={styles.requestRow}>
-                    <TouchableOpacity
-                      style={styles.requestMain}
-                      onPress={() =>
-                        router.push({
-                          pathname: '/users/[id]',
-                          params: { id: req.from_user_id },
-                        } as never)
-                      }
-                    >
-                      <UserAvatar uri={req.avatar_url} size={44} />
-                      <View style={styles.requestText}>
-                        <Text style={styles.requestName}>{req.display_name}</Text>
-                        <Text style={styles.requestMeta}>Wants to connect</Text>
-                      </View>
-                    </TouchableOpacity>
-                    <View style={styles.requestActions}>
-                      <TouchableOpacity
-                        style={styles.acceptBtn}
-                        disabled={actingOn === req.id}
-                        onPress={() => void handleAccept(req.id)}
-                      >
-                        {actingOn === req.id ? (
-                          <ActivityIndicator color="#fff" size="small" />
-                        ) : (
-                          <Feather name="check" size={18} color="#fff" />
-                        )}
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.declineBtn}
-                        disabled={actingOn === req.id}
-                        onPress={() => void handleDecline(req.id)}
-                      >
-                        <Feather name="x" size={18} color="#666" />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                ))}
-              </View>
-            ) : null
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyBox}>
-              <Text style={styles.emptyTitle}>No friends yet</Text>
-              <Text style={styles.emptyText}>
-                Search for people or add someone by email.
-              </Text>
-            </View>
-          }
-          renderItem={({ item }) => (
-            <TouchableOpacity
-              style={styles.friendRow}
-              onPress={() =>
-                router.push({
-                  pathname: '/users/[id]',
-                  params: { id: item.id },
-                } as never)
-              }
-            >
-              <UserAvatar uri={item.avatar_url} size={48} />
-              <View style={styles.friendText}>
-                <Text style={styles.friendName}>{item.display_name}</Text>
-                <Text style={styles.friendMeta}>
-                  {item.is_public ? 'Public profile' : 'Private profile'}
-                </Text>
-              </View>
-              <Feather name="chevron-right" size={20} color="#999" />
-            </TouchableOpacity>
-          )}
-          contentContainerStyle={styles.listContent}
-        />
+        renderChats()
       )}
     </SafeAreaView>
   );
@@ -229,6 +375,32 @@ const styles = StyleSheet.create({
     color: '#1E2A5E',
     fontWeight: '600',
   },
+  segmentRow: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginBottom: 8,
+    backgroundColor: '#e8ecf5',
+    borderRadius: 12,
+    padding: 4,
+    gap: 4,
+  },
+  segment: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  segmentActive: {
+    backgroundColor: '#fff',
+  },
+  segmentText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#666',
+  },
+  segmentTextActive: {
+    color: '#1E2A5E',
+  },
   center: {
     flex: 1,
     alignItems: 'center',
@@ -238,25 +410,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 100,
   },
-  section: {
-    marginBottom: 16,
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.06)',
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1E2A5E',
-    marginBottom: 8,
-  },
   requestRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 8,
     gap: 8,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
   },
   requestMain: {
     flex: 1,
@@ -319,6 +483,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#777',
     marginTop: 2,
+  },
+  chatPreview: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 2,
+  },
+  chatTime: {
+    fontSize: 12,
+    color: '#999',
   },
   emptyBox: {
     padding: 24,

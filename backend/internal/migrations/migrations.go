@@ -269,6 +269,38 @@ var All = []Migration{
 			return nil
 		},
 	},
+	{
+		ID:          "0011_messages",
+		Description: "Create conversations and messages tables for 1:1 chat",
+		Up: func(ctx context.Context, tx *gorm.DB) error {
+			statements := []string{
+				`CREATE TABLE IF NOT EXISTS conversations (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					user_a_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+					user_b_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+					created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+					UNIQUE (user_a_id, user_b_id),
+					CHECK (user_a_id < user_b_id)
+				)`,
+				`CREATE TABLE IF NOT EXISTS messages (
+					id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+					conversation_id UUID NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
+					sender_id UUID NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+					body TEXT NOT NULL,
+					created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+					ciphertext_version INTEGER
+				)`,
+				`CREATE INDEX IF NOT EXISTS messages_conversation_created_idx
+					ON messages (conversation_id, created_at DESC)`,
+			}
+			for _, stmt := range statements {
+				if err := tx.WithContext(ctx).Exec(stmt).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
 }
 
 func Run(ctx context.Context, db *gorm.DB) error {

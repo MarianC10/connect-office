@@ -18,13 +18,14 @@ type UserReader interface {
 }
 
 type Service struct {
-	store Store
-	users UserReader
-	cfg   users.Config
+	store    Store
+	users    UserReader
+	cfg      users.Config
+	notifier RealtimeNotifier
 }
 
-func NewService(store Store, users UserReader, cfg users.Config) *Service {
-	return &Service{store: store, users: users, cfg: cfg}
+func NewService(store Store, users UserReader, cfg users.Config, notifier RealtimeNotifier) *Service {
+	return &Service{store: store, users: users, cfg: cfg, notifier: notifier}
 }
 
 func (s *Service) CreateRequest(ctx context.Context, p auth.Principal, body CreateRequestBody) (FriendRequestResponse, error) {
@@ -85,7 +86,11 @@ func (s *Service) CreateRequest(ctx context.Context, p auth.Principal, body Crea
 	if err != nil {
 		return FriendRequestResponse{}, err
 	}
-	return requestToInboxItem(req, fromUser, s.cfg), nil
+	item := requestToInboxItem(req, fromUser, s.cfg)
+	if s.notifier != nil {
+		s.notifier.NotifyFriendRequestNew(target.ID, item)
+	}
+	return item, nil
 }
 
 func (s *Service) ListInbox(ctx context.Context, p auth.Principal) ([]FriendRequestResponse, error) {
@@ -109,7 +114,23 @@ func (s *Service) AcceptRequest(ctx context.Context, p auth.Principal, requestID
 	if err != nil {
 		return ErrRequestNotFound
 	}
-	return s.store.AcceptRequest(ctx, id, p.UserID)
+	req, err := s.store.AcceptRequest(ctx, id, p.UserID)
+	if err != nil {
+		return err
+	}
+	if s.notifier != nil {
+		accepter, err := s.users.GetByID(ctx, p.UserID)
+		if err != nil {
+			return err
+		}
+		s.notifier.NotifyFriendRequestAccepted(req.FromUserID, FriendResponse{
+			ID:          accepter.ID.String(),
+			DisplayName: accepter.DisplayName,
+			IsPublic:    accepter.IsPublic,
+			AvatarURL:   users.ResolveAvatarURL(accepter.AvatarURL, s.cfg),
+		})
+	}
+	return nil
 }
 
 func (s *Service) DeclineRequest(ctx context.Context, p auth.Principal, requestID string) error {

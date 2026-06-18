@@ -17,6 +17,7 @@ import {
   listFriends,
   sendFriendRequest,
 } from '@/lib/friends';
+import { getConversationWithFriend } from '@/lib/chat';
 import { fetchUserProfile, PublicProfile } from '@/lib/profile';
 
 export default function UserProfileScreen() {
@@ -26,6 +27,7 @@ export default function UserProfileScreen() {
   const [isFriend, setIsFriend] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [openingChat, setOpeningChat] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -58,6 +60,25 @@ export default function UserProfileScreen() {
       cancelled = true;
     };
   }, [id, router]);
+
+  const handleMessage = async () => {
+    if (!profile) return;
+    setOpeningChat(true);
+    try {
+      const conv = await getConversationWithFriend(profile.id);
+      router.push({
+        pathname: '/chat/[id]',
+        params: { id: conv.id },
+      } as never);
+    } catch (err) {
+      Alert.alert(
+        'Error',
+        err instanceof Error ? err.message : 'Could not open chat.'
+      );
+    } finally {
+      setOpeningChat(false);
+    }
+  };
 
   const handleAddFriend = async () => {
     if (!profile) return;
@@ -115,15 +136,18 @@ export default function UserProfileScreen() {
         )}
 
         {isFriend && (
-          <View style={styles.friendBadge}>
-            <Feather name="users" size={16} color="#1E2A5E" />
-            <Text style={styles.friendBadgeText}>Friends</Text>
-          </View>
+          <TouchableOpacity
+            style={styles.primaryBtn}
+            disabled={openingChat}
+            onPress={() => void handleMessage()}
+          >
+            {openingChat ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.primaryBtnText}>Message</Text>
+            )}
+          </TouchableOpacity>
         )}
-
-        <TouchableOpacity style={styles.disabledBtn} disabled>
-          <Text style={styles.disabledBtnText}>Message (coming soon)</Text>
-        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );

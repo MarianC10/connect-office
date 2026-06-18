@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MarianC10/connect-office/backend/internal/chat"
 	"github.com/MarianC10/connect-office/backend/internal/users"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -23,7 +24,7 @@ type Store interface {
 	CreateRequest(ctx context.Context, fromUserID, toUserID uuid.UUID) (FriendRequest, error)
 	ListPendingInbox(ctx context.Context, toUserID uuid.UUID) ([]FriendRequest, error)
 	GetRequestByID(ctx context.Context, id uuid.UUID) (FriendRequest, error)
-	AcceptRequest(ctx context.Context, id uuid.UUID, toUserID uuid.UUID) error
+	AcceptRequest(ctx context.Context, id uuid.UUID, toUserID uuid.UUID) (FriendRequest, error)
 	DeclineRequest(ctx context.Context, id uuid.UUID, toUserID uuid.UUID) error
 	ListFriends(ctx context.Context, userID uuid.UUID) ([]UserProfile, error)
 	AreFriends(ctx context.Context, userA, userB uuid.UUID) (bool, error)
@@ -78,8 +79,9 @@ func (s *PostgresStore) GetRequestByID(ctx context.Context, id uuid.UUID) (Frien
 	return req, nil
 }
 
-func (s *PostgresStore) AcceptRequest(ctx context.Context, id uuid.UUID, toUserID uuid.UUID) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+func (s *PostgresStore) AcceptRequest(ctx context.Context, id uuid.UUID, toUserID uuid.UUID) (FriendRequest, error) {
+	var accepted FriendRequest
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var req FriendRequest
 		if err := tx.First(&req, "id = ?", id).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -100,6 +102,11 @@ func (s *PostgresStore) AcceptRequest(ctx context.Context, id uuid.UUID, toUserI
 			return fmt.Errorf("create friendship: %w", err)
 		}
 
+		conv := chat.Conversation{UserAID: a, UserBID: b, CreatedAt: time.Now().UTC()}
+		if err := tx.Create(&conv).Error; err != nil && !isUniqueViolation(err) {
+			return fmt.Errorf("create conversation: %w", err)
+		}
+
 		res := tx.Model(&FriendRequest{}).
 			Where("id = ? AND status = ?", id, RequestStatusPending).
 			Updates(map[string]any{
@@ -112,8 +119,15 @@ func (s *PostgresStore) AcceptRequest(ctx context.Context, id uuid.UUID, toUserI
 		if res.RowsAffected == 0 {
 			return ErrRequestNotFound
 		}
+
+		req.Status = RequestStatusAccepted
+		accepted = req
 		return nil
 	})
+	if err != nil {
+		return FriendRequest{}, err
+	}
+	return accepted, nil
 }
 
 func (s *PostgresStore) DeclineRequest(ctx context.Context, id uuid.UUID, toUserID uuid.UUID) error {

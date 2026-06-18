@@ -1,5 +1,5 @@
+import React, { useEffect } from "react";
 import { Tabs } from "expo-router";
-import React from "react";
 import { Platform, StyleSheet, View } from "react-native";
 import { BlurView } from "expo-blur";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -10,6 +10,7 @@ import { IconSymbol } from "@/components/ui/icon-symbol";
 import { Colors } from "@/constants/theme";
 import { useColorScheme } from "@/hooks/use-color-scheme";
 import { SOCIAL_ENABLED } from "@/lib/social-config";
+import { ensureChatWSLifecycle } from "@/lib/chat-ws";
 
 function TabBarBackground() {
   return <BlurView intensity={70} tint="light" style={StyleSheet.absoluteFill} />;
@@ -18,6 +19,11 @@ function TabBarBackground() {
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const insets = useSafeAreaInsets();
+
+  useEffect(() => {
+    if (!SOCIAL_ENABLED) return;
+    return ensureChatWSLifecycle();
+  }, []);
 
   return (
     <Tabs
