@@ -3,6 +3,16 @@ import { authFetch } from "@/lib/api";
 export type FriendRequest = {
   id: string;
   from_user_id: string;
+  from_email?: string;
+  display_name: string;
+  avatar_url: string;
+  created_at: string;
+};
+
+export type OutgoingFriendRequest = {
+  id: string;
+  to_user_id: string;
+  to_email?: string;
   display_name: string;
   avatar_url: string;
   created_at: string;
@@ -51,6 +61,26 @@ export async function fetchInbox(): Promise<FriendRequest[]> {
   return res.json();
 }
 
+export async function fetchOutgoing(): Promise<OutgoingFriendRequest[]> {
+  const res = await authFetch("/friends/requests/outgoing");
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function cancelOutgoingRequest(requestId: string): Promise<void> {
+  const res = await authFetch(
+    `/friends/requests/${encodeURIComponent(requestId)}/cancel`,
+    { method: "POST" }
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+}
+
 export async function acceptRequest(requestId: string): Promise<void> {
   const res = await authFetch(`/friends/requests/${encodeURIComponent(requestId)}/accept`, {
     method: "POST",
@@ -78,4 +108,14 @@ export async function listFriends(): Promise<Friend[]> {
     throw new Error(text || `HTTP ${res.status}`);
   }
   return res.json();
+}
+
+export async function unfriend(userId: string): Promise<void> {
+  const res = await authFetch(`/friends/user/${encodeURIComponent(userId)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `HTTP ${res.status}`);
+  }
 }

@@ -16,7 +16,9 @@ import {
   FriendRequestConflictError,
   listFriends,
   sendFriendRequest,
+  unfriend,
 } from '@/lib/friends';
+import { getConversationWithFriend, listConversations } from '@/lib/chat';
 import { fetchUserProfile, PublicProfile } from '@/lib/profile';
 
 export default function UserProfileScreen() {
@@ -24,8 +26,11 @@ export default function UserProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [isFriend, setIsFriend] = useState(false);
+  const [hasConversation, setHasConversation] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+  const [openingChat, setOpeningChat] = useState(false);
+  const [unfriending, setUnfriending] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -33,13 +38,15 @@ export default function UserProfileScreen() {
     let cancelled = false;
     const load = async () => {
       try {
-        const [user, friends] = await Promise.all([
+        const [user, friends, conversations] = await Promise.all([
           fetchUserProfile(id),
           listFriends(),
+          listConversations(),
         ]);
         if (cancelled) return;
         setProfile(user);
         setIsFriend(friends.some((f) => f.id === id));
+        setHasConversation(conversations.some((c) => c.friend.id === id));
       } catch (err) {
         if (!cancelled) {
           Alert.alert(
@@ -58,6 +65,58 @@ export default function UserProfileScreen() {
       cancelled = true;
     };
   }, [id, router]);
+
+  const handleMessage = async () => {
+    if (!profile) return;
+    setOpeningChat(true);
+    try {
+      const conv = await getConversationWithFriend(profile.id);
+      router.push({
+        pathname: '/chat/[id]',
+        params: { id: conv.id },
+      } as never);
+    } catch (err) {
+      Alert.alert(
+        'Error',
+        err instanceof Error ? err.message : 'Could not open chat.'
+      );
+    } finally {
+      setOpeningChat(false);
+    }
+  };
+
+  const handleUnfriend = () => {
+    if (!profile) return;
+    Alert.alert(
+      'Unfriend',
+      `Remove ${profile.display_name} from your friends? You can still view your chat history, but you won't be able to send new messages.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Unfriend',
+          style: 'destructive',
+          onPress: () => {
+            setUnfriending(true);
+            void (async () => {
+              try {
+                await unfriend(profile.id);
+                setIsFriend(false);
+              } catch (err) {
+                Alert.alert(
+                  'Error',
+                  err instanceof Error ? err.message : 'Could not unfriend.'
+                );
+              } finally {
+                setUnfriending(false);
+              }
+            })();
+          },
+        },
+      ]
+    );
+  };
+
+  const canOpenChat = isFriend || hasConversation;
 
   const handleAddFriend = async () => {
     if (!profile) return;
@@ -114,16 +173,35 @@ export default function UserProfileScreen() {
           </TouchableOpacity>
         )}
 
-        {isFriend && (
-          <View style={styles.friendBadge}>
-            <Feather name="users" size={16} color="#1E2A5E" />
-            <Text style={styles.friendBadgeText}>Friends</Text>
-          </View>
+        {canOpenChat && (
+          <TouchableOpacity
+            style={styles.primaryBtn}
+            disabled={openingChat}
+            onPress={() => void handleMessage()}
+          >
+            {openingChat ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.primaryBtnText}>
+                {isFriend ? 'Message' : 'View chat'}
+              </Text>
+            )}
+          </TouchableOpacity>
         )}
 
-        <TouchableOpacity style={styles.disabledBtn} disabled>
-          <Text style={styles.disabledBtnText}>Message (coming soon)</Text>
-        </TouchableOpacity>
+        {isFriend && (
+          <TouchableOpacity
+            style={styles.secondaryBtn}
+            disabled={unfriending}
+            onPress={handleUnfriend}
+          >
+            {unfriending ? (
+              <ActivityIndicator color="#c0392b" />
+            ) : (
+              <Text style={styles.secondaryBtnText}>Unfriend</Text>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -178,6 +256,21 @@ const styles = StyleSheet.create({
   primaryBtnText: {
     color: '#fff',
     fontWeight: '700',
+    fontSize: 16,
+  },
+  secondaryBtn: {
+    marginTop: 12,
+    borderRadius: 22,
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+    minWidth: 180,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(192,57,43,0.35)',
+  },
+  secondaryBtnText: {
+    color: '#c0392b',
+    fontWeight: '600',
     fontSize: 16,
   },
   friendBadge: {

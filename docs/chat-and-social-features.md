@@ -561,6 +561,28 @@ When off: API returns **404**; mobile hides social UI. **Bookings unaffected.**
 
 ---
 
+## Social CLI (dev tool)
+
+Terminal utility to act as the **seed test user** (`seed-test@connectoffice.local`) for manual social testing. The bot exists in Postgres only (via `go run ./cmd/seed`); the CLI mints an HS256 JWT locally — no Supabase login.
+
+**Requires:** `SUPABASE_JWT_SECRET` in `backend/.env`, API running, `SOCIAL_ENABLED=true` (default).
+
+```bash
+cd backend
+go run ./cmd/social-cli help
+go run ./cmd/social-cli me
+go run ./cmd/social-cli inbox
+go run ./cmd/social-cli accept mobile.user@example.com
+go run ./cmd/social-cli profile --private
+go run ./cmd/social-cli chat mobile.user@example.com
+```
+
+Commands use **email** for targeting (friend requests, accept/decline, send, chat). `chat <email>` loads history via REST and sends/receives live messages over WebSocket (`/chat/ws`).
+
+**Two-actor test:** mobile user sends friend request to `seed-test@connectoffice.local` → CLI `accept <their-email>` → CLI `chat <their-email>` while they reply on the app.
+
+---
+
 ## File reference (new/changed by PR)
 
 ### PR 1 (done)
@@ -598,3 +620,10 @@ When off: API returns **404**; mobile hides social UI. **Bookings unaffected.**
 - `mobile/lib/chat.ts`, `mobile/lib/chat-ws.ts`
 - `mobile/app/chat/[id].tsx`
 - `mobile/app/(tabs)/people.tsx` (chats segment)
+
+### Social CLI
+
+- `backend/internal/devtest/user.go`
+- `backend/cmd/social-cli/*`
+- `backend/cmd/seed/main.go` (uses `devtest` constants)
+- `backend/.env.example`, `docs/chat-and-social-features.md`
