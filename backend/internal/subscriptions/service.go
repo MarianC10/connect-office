@@ -33,6 +33,7 @@ var (
 	ErrStripeNotConfigured       = errors.New("stripe is not configured")
 	ErrPlanNotConfigured         = errors.New("subscription plan is not configured for checkout")
 	ErrWebhookVerification       = errors.New("webhook verification failed")
+	ErrNoEntrancesRemaining      = errors.New("no entrances remaining")
 )
 
 func NewService(store Store, users UserProvisioner, stripe StripeGateway, cfg Config) *Service {

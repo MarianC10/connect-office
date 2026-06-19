@@ -21,6 +21,7 @@ type Store interface {
 	SearchPublicByDisplayName(ctx context.Context, query string, limit int) ([]User, error)
 	GetByEmail(ctx context.Context, email string) (User, error)
 	GetByID(ctx context.Context, userID uuid.UUID) (User, error)
+	GetByIDs(ctx context.Context, userIDs []uuid.UUID) ([]User, error)
 }
 
 type PostgresStore struct {
@@ -168,6 +169,17 @@ func (s *PostgresStore) GetByID(ctx context.Context, userID uuid.UUID) (User, er
 		return User{}, fmt.Errorf("get user: %w", err)
 	}
 	return u, nil
+}
+
+func (s *PostgresStore) GetByIDs(ctx context.Context, userIDs []uuid.UUID) ([]User, error) {
+	if len(userIDs) == 0 {
+		return []User{}, nil
+	}
+	var users []User
+	if err := s.db.WithContext(ctx).Where("id IN ?", userIDs).Find(&users).Error; err != nil {
+		return nil, fmt.Errorf("get users by ids: %w", err)
+	}
+	return users, nil
 }
 
 func (s *PostgresStore) GetStripeCustomerID(ctx context.Context, userID uuid.UUID) (string, error) {

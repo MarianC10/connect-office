@@ -18,6 +18,7 @@ type Store interface {
 	GetByStripeSubscriptionID(ctx context.Context, subscriptionID string) (UserSubscription, error)
 	Create(ctx context.Context, sub UserSubscription) (UserSubscription, error)
 	Update(ctx context.Context, sub UserSubscription) error
+	DecrementEntrancesRemaining(ctx context.Context, tx *gorm.DB, userID uuid.UUID) error
 }
 
 type PostgresStore struct {
@@ -102,6 +103,25 @@ func (s *PostgresStore) Update(ctx context.Context, sub UserSubscription) error 
 	sub.UpdatedAt = time.Now().UTC()
 	if err := s.db.WithContext(ctx).Save(&sub).Error; err != nil {
 		return fmt.Errorf("update subscription: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) DecrementEntrancesRemaining(ctx context.Context, tx *gorm.DB, userID uuid.UUID) error {
+	db := s.db
+	if tx != nil {
+		db = tx
+	}
+	result := db.WithContext(ctx).
+		Model(&UserSubscription{}).
+		Where("user_id = ? AND status = ? AND plan_type = ? AND entrances_remaining > 0",
+			userID, StatusActive, PlanEntrances10).
+		UpdateColumn("entrances_remaining", gorm.Expr("entrances_remaining - 1"))
+	if result.Error != nil {
+		return fmt.Errorf("decrement entrances: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrNoEntrancesRemaining
 	}
 	return nil
 }

@@ -24,6 +24,8 @@ import (
 
 	"github.com/MarianC10/connect-office/backend/internal/bookings"
 
+	"github.com/MarianC10/connect-office/backend/internal/checkins"
+
 	"github.com/MarianC10/connect-office/backend/internal/chat"
 
 	"github.com/MarianC10/connect-office/backend/internal/chat/ws"
@@ -246,6 +248,48 @@ func main() {
 
 	ownerSvc := owner.NewService(ownerStore, userStore, ownerCfg)
 
+	checkinCfg := checkins.LoadConfigFromEnv()
+	checkinStore := checkins.NewPostgresStore(db)
+	checkinSvc := checkins.NewService(
+		checkinStore,
+		store,
+		subStore,
+		subStore,
+		&checkins.UserDisplayReader{Store: userStore},
+		&checkins.OwnerBookingsReader{DB: db},
+		checkinCfg,
+	)
+
+	requireOwner := func(w http.ResponseWriter, r *http.Request) (auth.Principal, bool) {
+		p, ok := auth.PrincipalFromContext(r.Context())
+		if !ok {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return auth.Principal{}, false
+		}
+		u, err := userStore.GetByID(r.Context(), p.UserID)
+		if err != nil || !users.IsOwnerRole(u.Role) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return auth.Principal{}, false
+		}
+		return p, true
+	}
+
+	checkinStop := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(60 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := checkinSvc.RunAutoCheckout(ctx); err != nil {
+					log.Printf("auto checkout: %v", err)
+				}
+			case <-checkinStop:
+				return
+			}
+		}
+	}()
+
 
 
 	srv := &http.Server{
@@ -261,6 +305,16 @@ func main() {
 	http.Handle("/locations", auth.Middleware(verifier, http.HandlerFunc(locations.NewGetLocationsHandler(locSvc))))
 
 	http.Handle("/locations/", auth.Middleware(verifier, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		if strings.HasSuffix(r.URL.Path, "/check-in") {
+			checkins.NewCheckInHandler(checkinSvc)(w, r)
+			return
+		}
+
+		if strings.HasSuffix(r.URL.Path, "/check-ins/active") {
+			checkins.NewActiveCheckInsHandler(checkinSvc)(w, r)
+			return
+		}
 
 		if strings.HasSuffix(r.URL.Path, "/bookings/visible") {
 
@@ -285,6 +339,12 @@ func main() {
 	http.Handle("/bookings", auth.Middleware(verifier, http.HandlerFunc(bookings.NewBookingsHandler(bookingSvc))))
 
 	http.Handle("/bookings/", auth.Middleware(verifier, http.HandlerFunc(bookings.NewBookingByIDHandler(bookingSvc))))
+
+	http.Handle("/check-ins/me", auth.Middleware(verifier, checkins.NewMyCheckInsHandler(checkinSvc)))
+
+	http.Handle("/check-ins/", auth.Middleware(verifier, checkins.NewCheckOutHandler(checkinSvc)))
+
+	http.Handle("/owner/presence", auth.Middleware(verifier, checkins.NewOwnerPresenceHandler(checkinSvc, requireOwner)))
 
 	http.Handle("/me", auth.Middleware(verifier, http.HandlerFunc(users.NewMeHandler(userSvc))))
 
@@ -359,6 +419,7 @@ func main() {
 	defer cancel()
 
 	wsHub.CloseAll()
+	close(checkinStop)
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 

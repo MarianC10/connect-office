@@ -91,7 +91,6 @@ export default function ProfileScreen() {
   const handleLogout = async () => {
     disconnectChatWS();
     await supabase.auth.signOut();
-    router.replace('/login');
   };
 
   const MenuItem = ({

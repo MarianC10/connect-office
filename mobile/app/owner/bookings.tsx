@@ -24,8 +24,7 @@ import {
   getBookingWindowDateKeys,
   todayInBucharest,
 } from "@/lib/bookings";
-import { fetchOwnerBookings, fetchOwnerLocations } from "@/lib/owner";
-import type { OwnerBooking } from "@/lib/owner";
+import { fetchOwnerLocations, fetchOwnerPresence, type OwnerBooking, type OwnerPresenceCheckedIn } from "@/lib/owner";
 
 const BG_IMAGE = require("../../assets/images/login_signup_background.jpg");
 
@@ -38,6 +37,7 @@ export type Booking = {
   dates: string;
   status: BookingStatus;
   imageUrl?: string;
+  checkedIn?: boolean;
 };
 
 const PLACEHOLDER_OFFICE_IMAGE =
@@ -48,6 +48,7 @@ export default function OwnerBookingsScreen() {
   const [locationFilter, setLocationFilter] = useState<string | null>(null);
   const [locations, setLocations] = useState<{ id: string; name: string }[]>([]);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [checkedInNow, setCheckedInNow] = useState<OwnerPresenceCheckedIn[]>([]);
   const [loading, setLoading] = useState(true);
 
   const dateOptions = getBookingWindowDateKeys();
@@ -55,17 +56,18 @@ export default function OwnerBookingsScreen() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [locs, items] = await Promise.all([
-        fetchOwnerLocations(),
-        fetchOwnerBookings({
-          date: selectedDate,
-          locationId: locationFilter ?? undefined,
-        }),
-      ]);
+      const locs = await fetchOwnerLocations();
       setLocations(locs.map((l) => ({ id: l.id, name: l.name })));
-      setBookings(items.map(mapOwnerBooking));
+
+      const presence = await fetchOwnerPresence({
+        date: selectedDate,
+        locationId: locationFilter ?? undefined,
+      });
+      setBookings(presence.bookings.map(mapPresenceBooking));
+      setCheckedInNow(presence.checked_in ?? []);
     } catch {
       setBookings([]);
+      setCheckedInNow([]);
     } finally {
       setLoading(false);
     }
@@ -160,6 +162,23 @@ export default function OwnerBookingsScreen() {
               </ScrollView>
             )}
 
+            {checkedInNow.length > 0 && (
+              <View style={styles.checkedInSection}>
+                <Text style={styles.sectionTitle}>Checked in now</Text>
+                {checkedInNow.map((person) => (
+                  <View key={`${person.user_id}-${person.location_id}`} style={styles.checkedInRow}>
+                    <View style={styles.checkedInText}>
+                      <Text style={styles.checkedInName}>{person.display_name}</Text>
+                      <Text style={styles.checkedInMeta}>
+                        {person.location_name} · {person.email}
+                      </Text>
+                    </View>
+                    <MaterialCommunityIcons name="account-check" size={22} color="#7CFCB6" />
+                  </View>
+                ))}
+              </View>
+            )}
+
             <View style={styles.bookingsList}>
               {loading ? (
                 <ActivityIndicator color="#fff" style={{ marginTop: 24 }} />
@@ -190,6 +209,15 @@ function mapOwnerBooking(b: OwnerBooking): Booking {
     dates: formatBookingDateLabel(b.booking_date),
     status: b.status === "confirmed" ? "confirmed" : "pending",
     imageUrl: b.location_image_url,
+  };
+}
+
+function mapPresenceBooking(
+  b: OwnerBooking & { checked_in?: boolean; checked_in_at?: string }
+): Booking {
+  return {
+    ...mapOwnerBooking(b),
+    checkedIn: b.checked_in,
   };
 }
 
@@ -224,20 +252,27 @@ function BookingCard({ booking }: { booking: Booking }) {
         <View style={styles.statusRow}>
           <Text style={styles.fieldLabel}>Status</Text>
 
-          <View
-            style={[
-              styles.statusBadge,
-              isConfirmed ? styles.confirmedBadge : styles.pendingBadge,
-            ]}
-          >
-            <Text
+          <View style={styles.statusBadges}>
+            {booking.checkedIn && (
+              <View style={[styles.statusBadge, styles.checkedInBadge]}>
+                <Text style={[styles.statusText, styles.checkedInBadgeText]}>Checked in</Text>
+              </View>
+            )}
+            <View
               style={[
-                styles.statusText,
-                isConfirmed ? styles.confirmedText : styles.pendingText,
+                styles.statusBadge,
+                isConfirmed ? styles.confirmedBadge : styles.pendingBadge,
               ]}
             >
-              {isConfirmed ? "Confirmed" : "Pending"}
-            </Text>
+              <Text
+                style={[
+                  styles.statusText,
+                  isConfirmed ? styles.confirmedText : styles.pendingText,
+                ]}
+              >
+                {isConfirmed ? "Confirmed" : "Pending"}
+              </Text>
+            </View>
           </View>
         </View>
       </View>
@@ -460,5 +495,63 @@ const styles = StyleSheet.create({
 
   pendingText: {
     color: "#9B6400",
+  },
+
+  checkedInSection: {
+    marginBottom: 16,
+    paddingHorizontal: 4,
+  },
+
+  sectionTitle: {
+    color: "#F2F2F2",
+    fontSize: 18,
+    fontWeight: "800",
+    marginBottom: 10,
+    fontFamily: Platform.select({
+      ios: "Georgia",
+      android: "serif",
+      default: "serif",
+    }),
+  },
+
+  checkedInRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 8,
+  },
+
+  checkedInText: {
+    flex: 1,
+    paddingRight: 8,
+  },
+
+  checkedInName: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+
+  checkedInMeta: {
+    color: "rgba(255,255,255,0.75)",
+    fontSize: 12,
+    marginTop: 2,
+  },
+
+  statusBadges: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+
+  checkedInBadge: {
+    backgroundColor: "#E8FFF3",
+  },
+
+  checkedInBadgeText: {
+    color: "#0F6B45",
   },
 });

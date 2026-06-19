@@ -39,7 +39,13 @@
           }
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow Connect Office to verify your location when checking in to an office."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

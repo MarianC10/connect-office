@@ -31,6 +31,12 @@ export type OwnerLocationDetail = {
   latitude: number;
   longitude: number;
   capacity: number;
+  timezone?: string;
+  weekday_open?: string;
+  weekday_close?: string;
+  weekend_open?: string;
+  weekend_close?: string;
+  hours_overrides?: Record<string, unknown>;
   images: LocationImage[];
   amenity_ids: string[];
   amenities: AmenityCatalogItem[];
@@ -64,8 +70,32 @@ export type CreateLocationBody = {
 export type UpdateLocationBody = {
   name?: string;
   description?: string;
+  timezone?: string;
+  weekday_open?: string;
+  weekday_close?: string;
+  weekend_open?: string;
+  weekend_close?: string;
   amenity_ids?: string[];
   images?: LocationImage[];
+};
+
+export type OwnerPresenceBooking = OwnerBooking & {
+  checked_in: boolean;
+  checked_in_at?: string;
+};
+
+export type OwnerPresenceCheckedIn = {
+  user_id: string;
+  display_name: string;
+  email: string;
+  location_id: string;
+  location_name: string;
+  checked_in_at: string;
+};
+
+export type OwnerPresence = {
+  bookings: OwnerPresenceBooking[];
+  checked_in: OwnerPresenceCheckedIn[];
 };
 
 export async function fetchAmenities(): Promise<AmenityCatalogItem[]> {
@@ -176,6 +206,22 @@ export async function fetchOwnerBookings(params?: {
   if (params?.locationId) search.set("location_id", params.locationId);
   const qs = search.toString();
   const res = await authFetch(`/owner/bookings${qs ? `?${qs}` : ""}`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function fetchOwnerPresence(params?: {
+  date?: string;
+  locationId?: string;
+}): Promise<OwnerPresence> {
+  const search = new URLSearchParams();
+  if (params?.date) search.set("date", params.date);
+  if (params?.locationId) search.set("location_id", params.locationId);
+  const qs = search.toString();
+  const res = await authFetch(`/owner/presence${qs ? `?${qs}` : ""}`);
   if (!res.ok) {
     const text = await res.text();
     throw new Error(text || `HTTP ${res.status}`);

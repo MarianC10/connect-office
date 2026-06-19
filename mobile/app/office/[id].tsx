@@ -28,6 +28,16 @@ import {
   LocationAvailability,
   todayInBucharest,
 } from '@/lib/bookings';
+import {
+  CheckInConflictError,
+  checkOut,
+  createCheckIn,
+  fetchMyCheckIns,
+  formatWorkingHoursSummary,
+  type MyCheckIns,
+} from '@/lib/checkins';
+import { fetchMySubscription, type MySubscription } from '@/lib/subscriptions';
+import * as Location from 'expo-location';
 import { UserAvatar } from '@/components/user-avatar';
 import {
   fetchVisibleBookings,
@@ -75,6 +85,11 @@ type OfficeLocation = {
   latitude: number;
   longitude: number;
   capacity?: number;
+  timezone?: string;
+  weekday_open?: string;
+  weekday_close?: string;
+  weekend_open?: string;
+  weekend_close?: string;
   images: LocationImage[];
   amenities: Amenity[];
 };
@@ -219,6 +234,17 @@ export default function OfficeDetailScreen() {
   const [peopleLoading, setPeopleLoading] = useState(false);
   const [peopleDate, setPeopleDate] = useState(() => todayInBucharest());
 
+  const [subscription, setSubscription] = useState<MySubscription | null>(null);
+  const [myCheckIns, setMyCheckIns] = useState<MyCheckIns | null>(null);
+  const [checkInLoading, setCheckInLoading] = useState(false);
+  const [checkInBusy, setCheckInBusy] = useState(false);
+
+  const activeCheckIn = myCheckIns?.active ?? null;
+  const activeAtThisOffice =
+    activeCheckIn != null && activeCheckIn.location_id === locationId;
+  const activeElsewhere =
+    activeCheckIn != null && activeCheckIn.location_id !== locationId;
+
   useEffect(() => {
     let cancelled = false;
 
@@ -289,6 +315,45 @@ export default function OfficeDetailScreen() {
       cancelled = true;
     };
   }, [locationId, peopleDate]);
+
+  useEffect(() => {
+    if (!locationId) {
+      setSubscription(null);
+      setMyCheckIns(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadCheckInState = async () => {
+      setCheckInLoading(true);
+      try {
+        const [sub, checkIns] = await Promise.all([
+          fetchMySubscription(),
+          fetchMyCheckIns(),
+        ]);
+        if (!cancelled) {
+          setSubscription(sub);
+          setMyCheckIns(checkIns);
+        }
+      } catch {
+        if (!cancelled) {
+          setSubscription(null);
+          setMyCheckIns({ history: [] });
+        }
+      } finally {
+        if (!cancelled) {
+          setCheckInLoading(false);
+        }
+      }
+    };
+
+    void loadCheckInState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [locationId]);
 
   useEffect(() => {
     if (!bookingVisible || !selectedDate) {
@@ -532,6 +597,112 @@ export default function OfficeDetailScreen() {
     }
   };
 
+  const refreshCheckInState = async () => {
+    const [sub, checkIns] = await Promise.all([
+      fetchMySubscription(),
+      fetchMyCheckIns(),
+    ]);
+    setSubscription(sub);
+    setMyCheckIns(checkIns);
+  };
+
+  const handleCheckIn = async () => {
+    if (!locationId || checkInBusy || activeElsewhere) {
+      return;
+    }
+
+    setCheckInBusy(true);
+    try {
+      let coords: { latitude: number; longitude: number } | undefined;
+      try {
+        const permission = await Location.requestForegroundPermissionsAsync();
+        if (permission.granted) {
+          const position = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          coords = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+          };
+        }
+      } catch {
+        // optional GPS — proceed without coordinates
+      }
+
+      const record = await createCheckIn(locationId, coords);
+      setMyCheckIns((current) => ({
+        active: record,
+        history: current?.history ?? [],
+      }));
+      Alert.alert('Checked in', `You are checked in at ${office?.name ?? 'this office'}.`);
+    } catch (err) {
+      if (err instanceof CheckInConflictError) {
+        Alert.alert('Cannot check in', err.message);
+      } else {
+        Alert.alert(
+          'Check-in failed',
+          err instanceof Error ? err.message : 'Could not check in.'
+        );
+      }
+      await refreshCheckInState();
+    } finally {
+      setCheckInBusy(false);
+    }
+  };
+
+  const handleCheckOut = async () => {
+    if (!activeCheckIn || checkInBusy) {
+      return;
+    }
+
+    setCheckInBusy(true);
+    try {
+      await checkOut(activeCheckIn.id);
+      setMyCheckIns((current) => ({
+        active: null,
+        history: current?.history ?? [],
+      }));
+      Alert.alert('Checked out', 'You have checked out of this office.');
+    } catch (err) {
+      Alert.alert(
+        'Check-out failed',
+        err instanceof Error ? err.message : 'Could not check out.'
+      );
+      await refreshCheckInState();
+    } finally {
+      setCheckInBusy(false);
+    }
+  };
+
+  const checkInDisabledReason = (() => {
+    if (checkInLoading) {
+      return null;
+    }
+    if (activeElsewhere && activeCheckIn) {
+      return `Checked in at ${activeCheckIn.location_name ?? 'another office'}. Check out first.`;
+    }
+    if (!subscription) {
+      return 'An active subscription is required to check in.';
+    }
+    if (subscription.status !== 'active') {
+      return 'Your subscription is not active.';
+    }
+    if (
+      subscription.plan_type === 'entrances_10' &&
+      subscription.entrances_remaining === 0
+    ) {
+      return 'No entrances remaining on your subscription.';
+    }
+    if (
+      (subscription.plan_type === 'monthly' || subscription.plan_type === 'yearly') &&
+      subscription.expires_at &&
+      new Date(subscription.expires_at).getTime() <= Date.now()
+    ) {
+      return 'Your subscription has expired.';
+    }
+    return null;
+  })();
+
   const bannerText = selectedUserBooking
     ? selectedUserBooking.location.id === locationId
       ? `You already have a booking at ${office?.name ?? 'this office'} on this day.`
@@ -695,14 +866,56 @@ export default function OfficeDetailScreen() {
               </View>
             )}
 
+            {office && (
+              <View style={styles.hoursSection}>
+                <Text style={styles.hoursTitle}>Working hours</Text>
+                <Text style={styles.hoursText}>
+                  {formatWorkingHoursSummary(office)}
+                </Text>
+                {activeElsewhere && activeCheckIn && (
+                  <Text style={styles.checkInHint}>
+                    You are checked in at {activeCheckIn.location_name ?? 'another office'}.
+                  </Text>
+                )}
+                {checkInDisabledReason && !activeAtThisOffice && (
+                  <Text style={styles.checkInHint}>{checkInDisabledReason}</Text>
+                )}
+              </View>
+            )}
+
             <View style={styles.bookingBar}>
               <TouchableOpacity
-                activeOpacity={0.8}
+                activeOpacity={0.85}
                 style={styles.bookButton}
                 onPress={openBookingModal}
               >
-                <Text style={styles.bookButtonText}>book</Text>
+                <Ionicons name="calendar-outline" size={18} color="#1E2A5E" />
+                <Text style={styles.bookButtonText}>Book a day</Text>
               </TouchableOpacity>
+              <TouchableOpacity
+                  activeOpacity={0.8}
+                  style={[
+                    styles.checkInButton,
+                    (checkInBusy ||
+                      (!activeAtThisOffice &&
+                        (checkInDisabledReason != null || checkInLoading))) &&
+                      styles.checkInButtonDisabled,
+                  ]}
+                  disabled={
+                    checkInBusy ||
+                    checkInLoading ||
+                    (!activeAtThisOffice && checkInDisabledReason != null)
+                  }
+                  onPress={activeAtThisOffice ? handleCheckOut : handleCheckIn}
+                >
+                  {checkInBusy ? (
+                    <ActivityIndicator color="#1E2A5E" size="small" />
+                  ) : (
+                    <Text style={styles.checkInButtonText}>
+                      {activeAtThisOffice ? 'Check out' : 'Check in'}
+                    </Text>
+                  )}
+                </TouchableOpacity>
             </View>
           </View>
         </ScrollView>
@@ -1000,26 +1213,86 @@ const styles = StyleSheet.create({
   },
 
   bookingBar: {
-    height: 47,
-    borderRadius: 14,
-    backgroundColor: 'rgba(170,170,170,0.55)',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 14,
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+    gap: 10,
   },
 
   bookButton: {
-    minWidth: 150,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: 'rgba(245,245,245,0.75)',
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1.5,
+    borderColor: 'rgba(30, 42, 94, 0.14)',
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 8,
+    shadowColor: '#1E2A5E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+
+  checkInButton: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 24,
+    backgroundColor: '#1E2A5E',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#1E2A5E',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+
+  checkInButtonDisabled: {
+    opacity: 0.45,
+  },
+
+  checkInButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '800',
+    fontFamily: 'serif',
+  },
+
+  hoursSection: {
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+
+  hoursTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1E2A5E',
+    fontFamily: 'serif',
+    marginBottom: 4,
+  },
+
+  hoursText: {
+    fontSize: 14,
+    color: '#444',
+    fontFamily: 'serif',
+  },
+
+  checkInHint: {
+    marginTop: 8,
+    fontSize: 13,
+    color: '#8a4b12',
+    fontFamily: 'serif',
   },
 
   bookButtonText: {
-    color: '#fff',
-    fontSize: 18,
+    color: '#1E2A5E',
+    fontSize: 16,
     fontWeight: '800',
     fontFamily: 'serif',
   },
