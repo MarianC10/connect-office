@@ -178,6 +178,7 @@ export default function FavouritesScreen() {
                         )}
                       </View>
 
+
                       {/* Info box */}
                       <View style={styles.favouriteInfoBox}>
                         <Text style={styles.favouriteName} numberOfLines={1}>

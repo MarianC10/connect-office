@@ -178,6 +178,7 @@ export default function ProfileScreen() {
             />
             <View style={styles.separator} />
 
+
             <MenuItem
               icon={<Feather name="calendar" size={22} color="#333" />}
               label="All bookings"
