@@ -192,10 +192,6 @@ export default function FavouritesScreen() {
                         </Text>
 
                         <View style={styles.bottomRow}>
-                          <Text style={styles.priceText} numberOfLines={1}>
-                            Price: 100 lei
-                          </Text>
-
                           <View style={styles.ratingRow}>
                             <Ionicons name="star" size={14} color="#f2f2f2" />
                             <Text style={styles.ratingText}>4.5</Text>

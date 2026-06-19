@@ -185,19 +185,6 @@ export default function ProfileScreen() {
             <View style={styles.separator} />
 
             <MenuItem
-              icon={
-                <MaterialCommunityIcons
-                  name="tune-variant"
-                  size={22}
-                  color="#333"
-                />
-              }
-              label="Preferences"
-              // onPress={() => router.push('/profile/preferences')}
-            />
-            <View style={styles.separator} />
-
-            <MenuItem
               icon={<Feather name="credit-card" size={22} color="#333" />}
               label="Subscription"
               onPress={() => router.push('/profile/subscription')}
