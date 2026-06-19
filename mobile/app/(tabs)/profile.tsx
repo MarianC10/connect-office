@@ -19,6 +19,7 @@ import { supabase } from '@/lib/supabase';
 import { UserAvatar } from '@/components/user-avatar';
 import { resolveDisplayName } from '@/lib/display-name';
 import { fetchMe } from '@/lib/profile';
+import { disconnectChatWS } from '@/lib/chat-ws';
 
 type ProfileUser = {
   name: string;
@@ -88,6 +89,7 @@ export default function ProfileScreen() {
   }, [loadProfile]);
 
   const handleLogout = async () => {
+    disconnectChatWS();
     await supabase.auth.signOut();
     router.replace('/login');
   };

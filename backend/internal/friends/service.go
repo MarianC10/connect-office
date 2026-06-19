@@ -18,13 +18,14 @@ type UserReader interface {
 }
 
 type Service struct {
-	store Store
-	users UserReader
-	cfg   users.Config
+	store    Store
+	users    UserReader
+	cfg      users.Config
+	notifier RealtimeNotifier
 }
 
-func NewService(store Store, users UserReader, cfg users.Config) *Service {
-	return &Service{store: store, users: users, cfg: cfg}
+func NewService(store Store, users UserReader, cfg users.Config, notifier RealtimeNotifier) *Service {
+	return &Service{store: store, users: users, cfg: cfg, notifier: notifier}
 }
 
 func (s *Service) CreateRequest(ctx context.Context, p auth.Principal, body CreateRequestBody) (FriendRequestResponse, error) {
@@ -85,7 +86,11 @@ func (s *Service) CreateRequest(ctx context.Context, p auth.Principal, body Crea
 	if err != nil {
 		return FriendRequestResponse{}, err
 	}
-	return requestToInboxItem(req, fromUser, s.cfg), nil
+	item := requestToInboxItem(req, fromUser, s.cfg)
+	if s.notifier != nil {
+		s.notifier.NotifyFriendRequestNew(target.ID, item)
+	}
+	return item, nil
 }
 
 func (s *Service) ListInbox(ctx context.Context, p auth.Principal) ([]FriendRequestResponse, error) {
@@ -104,12 +109,44 @@ func (s *Service) ListInbox(ctx context.Context, p auth.Principal) ([]FriendRequ
 	return out, nil
 }
 
+func (s *Service) ListOutgoing(ctx context.Context, p auth.Principal) ([]OutgoingFriendRequestResponse, error) {
+	items, err := s.store.ListPendingOutgoing(ctx, p.UserID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]OutgoingFriendRequestResponse, 0, len(items))
+	for _, req := range items {
+		toUser, err := s.users.GetByID(ctx, req.ToUserID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, requestToOutgoingItem(req, toUser, s.cfg))
+	}
+	return out, nil
+}
+
 func (s *Service) AcceptRequest(ctx context.Context, p auth.Principal, requestID string) error {
 	id, err := uuid.Parse(requestID)
 	if err != nil {
 		return ErrRequestNotFound
 	}
-	return s.store.AcceptRequest(ctx, id, p.UserID)
+	req, err := s.store.AcceptRequest(ctx, id, p.UserID)
+	if err != nil {
+		return err
+	}
+	if s.notifier != nil {
+		accepter, err := s.users.GetByID(ctx, p.UserID)
+		if err != nil {
+			return err
+		}
+		s.notifier.NotifyFriendRequestAccepted(req.FromUserID, FriendResponse{
+			ID:          accepter.ID.String(),
+			DisplayName: accepter.DisplayName,
+			IsPublic:    accepter.IsPublic,
+			AvatarURL:   users.ResolveAvatarURL(accepter.AvatarURL, s.cfg),
+		})
+	}
+	return nil
 }
 
 func (s *Service) DeclineRequest(ctx context.Context, p auth.Principal, requestID string) error {
@@ -118,6 +155,22 @@ func (s *Service) DeclineRequest(ctx context.Context, p auth.Principal, requestI
 		return ErrRequestNotFound
 	}
 	return s.store.DeclineRequest(ctx, id, p.UserID)
+}
+
+func (s *Service) CancelRequest(ctx context.Context, p auth.Principal, requestID string) error {
+	id, err := uuid.Parse(requestID)
+	if err != nil {
+		return ErrRequestNotFound
+	}
+	return s.store.CancelRequest(ctx, id, p.UserID)
+}
+
+func (s *Service) Unfriend(ctx context.Context, p auth.Principal, friendIDStr string) error {
+	friendID, err := uuid.Parse(friendIDStr)
+	if err != nil {
+		return ErrUserNotFound
+	}
+	return s.store.RemoveFriend(ctx, p.UserID, friendID)
 }
 
 func (s *Service) ListFriends(ctx context.Context, p auth.Principal) ([]FriendResponse, error) {
@@ -142,8 +195,28 @@ func requestToInboxItem(req FriendRequest, fromUser users.User, cfg users.Config
 	return FriendRequestResponse{
 		ID:          req.ID.String(),
 		FromUserID:  req.FromUserID.String(),
+		FromEmail:   userEmailString(fromUser.Email),
 		DisplayName: fromUser.DisplayName,
 		AvatarURL:   avatar,
 		CreatedAt:   req.CreatedAt.UTC().Format(time.RFC3339),
 	}
+}
+
+func requestToOutgoingItem(req FriendRequest, toUser users.User, cfg users.Config) OutgoingFriendRequestResponse {
+	avatar := users.ResolveAvatarURL(toUser.AvatarURL, cfg)
+	return OutgoingFriendRequestResponse{
+		ID:          req.ID.String(),
+		ToUserID:    req.ToUserID.String(),
+		ToEmail:     userEmailString(toUser.Email),
+		DisplayName: toUser.DisplayName,
+		AvatarURL:   avatar,
+		CreatedAt:   req.CreatedAt.UTC().Format(time.RFC3339),
+	}
+}
+
+func userEmailString(email *string) string {
+	if email == nil {
+		return ""
+	}
+	return strings.TrimSpace(*email)
 }

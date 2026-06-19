@@ -24,6 +24,10 @@ import (
 
 	"github.com/MarianC10/connect-office/backend/internal/bookings"
 
+	"github.com/MarianC10/connect-office/backend/internal/chat"
+
+	"github.com/MarianC10/connect-office/backend/internal/chat/ws"
+
 	"github.com/MarianC10/connect-office/backend/internal/friends"
 
 	"github.com/MarianC10/connect-office/backend/internal/locations"
@@ -218,7 +222,13 @@ func main() {
 
 	friendStore := friends.NewPostgresStore(db, userCfg)
 
-	friendSvc := friends.NewService(friendStore, userStore, userCfg)
+	wsHub := ws.NewHub()
+
+	chatStore := chat.NewPostgresStore(db, userCfg)
+
+	chatSvc := chat.NewService(chatStore, wsHub)
+
+	friendSvc := friends.NewService(friendStore, userStore, userCfg, wsHub)
 
 
 
@@ -272,13 +282,27 @@ func main() {
 
 	http.Handle("/users/", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, users.NewUsersHandler(userSvc))))
 
-	http.Handle("/friends/requests/inbox", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewInboxHandler(friendSvc))))
+	http.Handle("GET /friends/requests/inbox", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewInboxHandler(friendSvc))))
 
-	http.Handle("/friends/requests/", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewRequestByIDHandler(friendSvc))))
+	http.Handle("GET /friends/requests/outgoing", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewOutboxHandler(friendSvc))))
+
+	http.Handle("POST /friends/requests/{id}/accept", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewAcceptHandler(friendSvc))))
+
+	http.Handle("POST /friends/requests/{id}/decline", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewDeclineHandler(friendSvc))))
+
+	http.Handle("POST /friends/requests/{id}/cancel", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewCancelHandler(friendSvc))))
 
 	http.Handle("/friends/requests", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewRequestsHandler(friendSvc))))
 
+	http.Handle("DELETE /friends/user/{id}", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewUnfriendHandler(friendSvc))))
+
 	http.Handle("/friends", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, friends.NewFriendsHandler(friendSvc))))
+
+	http.Handle("/conversations", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, chat.NewConversationsHandler(chatSvc))))
+
+	http.Handle("/conversations/", auth.Middleware(verifier, social.WithSocialEnabled(socialCfg, chat.NewConversationByIDHandler(chatSvc))))
+
+	http.Handle("/chat/ws", social.WithSocialEnabled(socialCfg, ws.NewHandler(verifier, wsHub, chatSvc)))
 
 	http.Handle("/subscriptions/plans", auth.Middleware(verifier, http.HandlerFunc(subscriptions.NewPlansHandler(subSvc))))
 
@@ -317,6 +341,8 @@ func main() {
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 
 	defer cancel()
+
+	wsHub.CloseAll()
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 

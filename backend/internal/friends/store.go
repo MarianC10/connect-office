@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/MarianC10/connect-office/backend/internal/chat"
 	"github.com/MarianC10/connect-office/backend/internal/users"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -22,9 +23,12 @@ type UserProfile struct {
 type Store interface {
 	CreateRequest(ctx context.Context, fromUserID, toUserID uuid.UUID) (FriendRequest, error)
 	ListPendingInbox(ctx context.Context, toUserID uuid.UUID) ([]FriendRequest, error)
+	ListPendingOutgoing(ctx context.Context, fromUserID uuid.UUID) ([]FriendRequest, error)
 	GetRequestByID(ctx context.Context, id uuid.UUID) (FriendRequest, error)
-	AcceptRequest(ctx context.Context, id uuid.UUID, toUserID uuid.UUID) error
+	AcceptRequest(ctx context.Context, id uuid.UUID, toUserID uuid.UUID) (FriendRequest, error)
 	DeclineRequest(ctx context.Context, id uuid.UUID, toUserID uuid.UUID) error
+	CancelRequest(ctx context.Context, id uuid.UUID, fromUserID uuid.UUID) error
+	RemoveFriend(ctx context.Context, userID, friendID uuid.UUID) error
 	ListFriends(ctx context.Context, userID uuid.UUID) ([]UserProfile, error)
 	AreFriends(ctx context.Context, userA, userB uuid.UUID) (bool, error)
 	HasPendingBetween(ctx context.Context, fromUserID, toUserID uuid.UUID) (bool, error)
@@ -66,6 +70,18 @@ func (s *PostgresStore) ListPendingInbox(ctx context.Context, toUserID uuid.UUID
 	return items, nil
 }
 
+func (s *PostgresStore) ListPendingOutgoing(ctx context.Context, fromUserID uuid.UUID) ([]FriendRequest, error) {
+	var items []FriendRequest
+	err := s.db.WithContext(ctx).
+		Where("from_user_id = ? AND status = ?", fromUserID, RequestStatusPending).
+		Order("created_at DESC").
+		Find(&items).Error
+	if err != nil {
+		return nil, fmt.Errorf("list outgoing: %w", err)
+	}
+	return items, nil
+}
+
 func (s *PostgresStore) GetRequestByID(ctx context.Context, id uuid.UUID) (FriendRequest, error) {
 	var req FriendRequest
 	err := s.db.WithContext(ctx).First(&req, "id = ?", id).Error
@@ -78,8 +94,9 @@ func (s *PostgresStore) GetRequestByID(ctx context.Context, id uuid.UUID) (Frien
 	return req, nil
 }
 
-func (s *PostgresStore) AcceptRequest(ctx context.Context, id uuid.UUID, toUserID uuid.UUID) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+func (s *PostgresStore) AcceptRequest(ctx context.Context, id uuid.UUID, toUserID uuid.UUID) (FriendRequest, error) {
+	var accepted FriendRequest
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var req FriendRequest
 		if err := tx.First(&req, "id = ?", id).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -92,12 +109,15 @@ func (s *PostgresStore) AcceptRequest(ctx context.Context, id uuid.UUID, toUserI
 		}
 
 		a, b := canonicalPair(req.FromUserID, req.ToUserID)
-		friendship := Friendship{UserAID: a, UserBID: b, CreatedAt: time.Now().UTC()}
-		if err := tx.Create(&friendship).Error; err != nil {
-			if isUniqueViolation(err) {
-				return ErrAlreadyFriends
+		var friendshipCount int64
+		if err := tx.Model(&Friendship{}).Where("user_a_id = ? AND user_b_id = ?", a, b).Count(&friendshipCount).Error; err != nil {
+			return fmt.Errorf("check friendship: %w", err)
+		}
+		if friendshipCount == 0 {
+			friendship := Friendship{UserAID: a, UserBID: b, CreatedAt: time.Now().UTC()}
+			if err := tx.Create(&friendship).Error; err != nil {
+				return fmt.Errorf("create friendship: %w", err)
 			}
-			return fmt.Errorf("create friendship: %w", err)
 		}
 
 		res := tx.Model(&FriendRequest{}).
@@ -112,8 +132,20 @@ func (s *PostgresStore) AcceptRequest(ctx context.Context, id uuid.UUID, toUserI
 		if res.RowsAffected == 0 {
 			return ErrRequestNotFound
 		}
+
+		req.Status = RequestStatusAccepted
+		accepted = req
 		return nil
 	})
+	if err != nil {
+		return FriendRequest{}, err
+	}
+
+	chatStore := chat.NewPostgresStore(s.db, s.cfg)
+	if _, err := chatStore.CreateConversationForPair(ctx, accepted.FromUserID, accepted.ToUserID); err != nil {
+		return FriendRequest{}, err
+	}
+	return accepted, nil
 }
 
 func (s *PostgresStore) DeclineRequest(ctx context.Context, id uuid.UUID, toUserID uuid.UUID) error {
@@ -129,6 +161,40 @@ func (s *PostgresStore) DeclineRequest(ctx context.Context, id uuid.UUID, toUser
 	}
 	if res.RowsAffected == 0 {
 		return ErrRequestNotFound
+	}
+	return nil
+}
+
+func (s *PostgresStore) CancelRequest(ctx context.Context, id uuid.UUID, fromUserID uuid.UUID) error {
+	res := s.db.WithContext(ctx).
+		Model(&FriendRequest{}).
+		Where("id = ? AND from_user_id = ? AND status = ?", id, fromUserID, RequestStatusPending).
+		Updates(map[string]any{
+			"status":     RequestStatusDeclined,
+			"updated_at": time.Now().UTC(),
+		})
+	if res.Error != nil {
+		return fmt.Errorf("cancel request: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrRequestNotFound
+	}
+	return nil
+}
+
+func (s *PostgresStore) RemoveFriend(ctx context.Context, userID, friendID uuid.UUID) error {
+	if userID == friendID {
+		return ErrCannotFriendSelf
+	}
+	a, b := canonicalPair(userID, friendID)
+	res := s.db.WithContext(ctx).
+		Where("user_a_id = ? AND user_b_id = ?", a, b).
+		Delete(&Friendship{})
+	if res.Error != nil {
+		return fmt.Errorf("remove friendship: %w", res.Error)
+	}
+	if res.RowsAffected == 0 {
+		return ErrNotFriends
 	}
 	return nil
 }
